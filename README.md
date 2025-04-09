@@ -29,7 +29,7 @@
 1. 리포지토리를 복제합니다:
    ```bash
    git clone https://github.com/carusina/LLM-based-Automated-Planning-Workflow-for-Game-Design.git
-   cd game-design-llm-automation
+   cd LLM-based-Automated-Planning-Workflow-for-Game-Design
    ```
 
 2. 가상 환경을 생성하고 활성화합니다:

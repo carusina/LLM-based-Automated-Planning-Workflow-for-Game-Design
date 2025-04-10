@@ -665,14 +665,26 @@
         
         // 다운로드 확인 버튼 클릭 이벤트
         confirmDownloadBtn.addEventListener('click', function() {
+            // 게임 기획 데이터가 없는 경우
+            if (!gameDesignData) {
+                alert('다운로드할 게임 기획 데이터가 없습니다.');
+                return;
+            }
+            
             // 선택된 형식 가져오기
             const format = document.querySelector('input[name="downloadFormat"]:checked').value;
+            
+            // 다운로드 버튼 비활성화 및 로딩 상태 표시
+            confirmDownloadBtn.disabled = true;
+            confirmDownloadBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 다운로드 중...';
             
             // API 요청 데이터
             const requestData = {
                 current_design: gameDesignData,
                 format: format
             };
+            
+            console.log(`다운로드 요청: ${format} 형식, 게임 제목: ${gameDesignData.game_title}`);
             
             // API 호출
             fetch('/download', {
@@ -682,10 +694,21 @@
                 },
                 body: JSON.stringify(requestData)
             })
-            .then(response => response.blob())
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(data => {
+                        throw new Error(data.error || '다운로드 중 오류가 발생했습니다.');
+                    });
+                }
+                return response.blob();
+            })
             .then(blob => {
+                // 파일 확장자 결정
+                let extension = format;
+                if (format === 'markdown') extension = 'md';
+                
                 // 파일 다운로드
-                const fileName = `${gameDesignData.game_title.replace(/\s+/g, '_')}_게임기획서.${format}`;
+                const fileName = `${gameDesignData.game_title.replace(/\s+/g, '_')}_게임기획서.${extension}`;
                 const url = window.URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.style.display = 'none';
@@ -696,10 +719,14 @@
                 window.URL.revokeObjectURL(url);
             })
             .catch(error => {
-                console.error('Error:', error);
-                alert('파일 다운로드 중 오류가 발생했습니다.');
+                console.error('다운로드 오류:', error);
+                alert(`파일 다운로드 중 오류가 발생했습니다: ${error.message}`);
             })
             .finally(() => {
+                // 다운로드 버튼 원래 상태로 복원
+                confirmDownloadBtn.disabled = false;
+                confirmDownloadBtn.textContent = '다운로드';
+                
                 // 모달 닫기
                 bootstrap.Modal.getInstance(document.getElementById('downloadModal')).hide();
             });

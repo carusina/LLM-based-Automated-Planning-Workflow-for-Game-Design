@@ -4,7 +4,8 @@ import json
 import datetime
 from typing import Dict, Any, List, Optional, Union
 import markdown
-from fpdf import FPDF
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 import docx
 
 class DocumentGenerator:
@@ -453,45 +454,132 @@ class DocumentGenerator:
             game_design: 게임 기획 정보
             file_path: 출력 파일 경로
         """
-        # 마크다운 생성을 통해 내용 확보
-        temp_md_path = file_path.replace('.pdf', '_temp.md')
-        self._create_markdown(game_design, temp_md_path)
-        
-        # 마크다운 내용 PDF로 변환
-        with open(temp_md_path, 'r', encoding='utf-8') as f:
-            md_content = f.read()
-        
-        # PDF 생성 라이브러리 사용
-        from reportlab.pdfgen import canvas
-        from reportlab.lib.pagesizes import letter
-        from reportlab.lib.styles import getSampleStyleSheet
-        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-        from reportlab.lib.units import inch
-        
-        # PDF 문서 생성
-        pdf = SimpleDocTemplate(file_path, pagesize=letter)
-        styles = getSampleStyleSheet()
-        story = []
-        
-        # 마크다운 내용을 PDF 문단으로 변환
-        for line in md_content.split('\n'):
-            if line.startswith('# '):
-                story.append(Paragraph(line[2:], styles['Title']))
-            elif line.startswith('## '):
-                story.append(Paragraph(line[3:], styles['Heading2']))
-            elif line.startswith('### '):
-                story.append(Paragraph(line[4:], styles['Heading3']))
-            elif line.startswith('- '):
-                story.append(Paragraph('• ' + line[2:], styles['BodyText']))
-            else:
-                story.append(Paragraph(line, styles['BodyText']))
-            story.append(Spacer(1, 12))
-        
-        # PDF로 저장
-        pdf.build(story)
-        
-        # 임시 마크다운 파일 삭제
-        os.remove(temp_md_path)
+        try:
+            # 폰트 등록 (한글 폰트 사용 시 필수)
+            pdfmetrics.registerFont(TTFont('NanumGothic', '/Users/carusina/programming/SW_Project/assets/fonts/NanumGothic.ttf'))
+            pdfmetrics.registerFont(TTFont('NanumGothicBold', '/Users/carusina/programming/SW_Project/assets/fonts/NanumGothicBold.ttf'))
+            
+            # 마크다운 생성을 통해 내용 확보
+            temp_md_path = file_path.replace('.pdf', '_temp.md')
+            self._create_markdown(game_design, temp_md_path)
+            
+            # 마크다운 내용 PDF로 변환
+            with open(temp_md_path, 'r', encoding='utf-8') as f:
+                md_content = f.read()
+            
+            # PDF 생성 라이브러리 사용
+            from reportlab.pdfgen import canvas
+            from reportlab.lib.pagesizes import letter
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+            from reportlab.lib.units import inch
+            from reportlab.lib.enums import TA_JUSTIFY, TA_LEFT, TA_CENTER
+            from reportlab.lib import colors
+            
+            # PDF 문서 생성
+            pdf = SimpleDocTemplate(file_path, pagesize=letter)
+            styles = getSampleStyleSheet()
+            
+            # 기존 스타일 수정 및 새로운 스타일 생성
+            title_style = ParagraphStyle(
+                name='Title',
+                parent=styles['Title'],
+                fontName='NanumGothicBold',  # 볼드 폰트 사용
+                fontSize=16
+            )
+            
+            heading2_style = ParagraphStyle(
+                name='Heading2',
+                parent=styles['Heading2'],
+                fontName='NanumGothicBold',
+                fontSize=14
+            )
+            
+            heading3_style = ParagraphStyle(
+                name='Heading3',
+                parent=styles['Heading3'],
+                fontName='NanumGothicBold',
+                fontSize=12
+            )
+            
+            body_style = ParagraphStyle(
+                name='BodyText',
+                parent=styles['BodyText'],
+                fontName='NanumGothic',
+                fontSize=10
+            )
+            
+            # 필요한 추가 스타일만 정의
+            bullet_style = ParagraphStyle(
+                name='CustomBullet',
+                parent=body_style,
+                leftIndent=20,
+                spaceBefore=3,
+                spaceAfter=3,
+                fontName='NanumGothic'
+            )
+            
+            bold_style = ParagraphStyle(
+                name='CustomBold',
+                parent=body_style,
+                fontName='NanumGothicBold'
+            )
+            
+            heading4_style = ParagraphStyle(
+                name='CustomHeading4',
+                parent=heading3_style,
+                fontSize=11,
+                spaceBefore=6,
+                spaceAfter=3,
+                fontName='NanumGothicBold'
+            )
+            
+            story = []
+            
+            # 마크다운 내용을 PDF 문단으로 변환
+            lines = md_content.split('\n')
+            i = 0
+            while i < len(lines):
+                line = lines[i].strip()
+                
+                if line.startswith('# '):
+                    story.append(Paragraph(line[2:], title_style))
+                    story.append(Spacer(1, 12))
+                elif line.startswith('## '):
+                    story.append(Paragraph(line[3:], heading2_style))
+                    story.append(Spacer(1, 6))
+                elif line.startswith('### '):
+                    story.append(Paragraph(line[4:], heading3_style))
+                    story.append(Spacer(1, 6))
+                elif line.startswith('#### '):
+                    story.append(Paragraph(line[5:], heading4_style))
+                    story.append(Spacer(1, 3))
+                elif line.startswith('- '):
+                    story.append(Paragraph('• ' + line[2:], bullet_style))
+                elif line.startswith('**') and line.endswith('**'):
+                    # 볼드 텍스트 처리
+                    text = line.replace('**', '')
+                    story.append(Paragraph(text, bold_style))
+                elif line:
+                    # 일반 텍스트
+                    story.append(Paragraph(line, body_style))
+                    if i < len(lines) - 1 and lines[i+1].strip():
+                        story.append(Spacer(1, 6))
+                
+                i += 1
+                
+            # PDF로 저장
+            pdf.build(story)
+            
+            # 임시 마크다운 파일 삭제
+            if os.path.exists(temp_md_path):
+                os.remove(temp_md_path)
+                
+            print(f"PDF 파일 생성 완료: {file_path}")
+            
+        except Exception as e:
+            print(f"PDF 생성 중 오류 발생: {str(e)}")
+            raise
     
     def _create_docx(self, game_design: Dict[str, Any], file_path: str) -> None:
         """
@@ -501,157 +589,313 @@ class DocumentGenerator:
             game_design: 게임 기획 정보
             file_path: 출력 파일 경로
         """
-        doc = docx.Document()
-        
-        # 제목 및 기본 정보
-        doc.add_heading(game_design.get('game_title', '게임 기획서'), 0)
-        
-        p = doc.add_paragraph()
-        p.add_run('고수준 컨셉: ').bold = True
-        p.add_run(game_design.get('high_concept', ''))
-        
-        p = doc.add_paragraph()
-        p.add_run('타겟 사용자층: ').bold = True
-        p.add_run(game_design.get('target_audience', ''))
-        
-        p = doc.add_paragraph()
-        p.add_run('장르: ').bold = True
-        p.add_run(game_design.get('genre', ''))
-        
-        p = doc.add_paragraph()
-        p.add_run('플랫폼: ').bold = True
-        p.add_run(game_design.get('platform', ''))
-        
-        doc.add_paragraph()
-        
-        # 컨셉 세부사항
-        doc.add_heading('게임 컨셉', 1)
-        concept_details = game_design.get("concept_details", {})
-        
-        doc.add_heading('확장된 컨셉', 2)
-        doc.add_paragraph(concept_details.get('extended_concept', ''))
-        
-        doc.add_heading('차별화 포인트', 2)
-        for usp in concept_details.get("unique_selling_points", []):
-            doc.add_paragraph(usp, style='List Bullet')
-        
-        doc.add_heading('분위기', 2)
-        doc.add_paragraph(concept_details.get('mood', ''))
-        
-        # 게임플레이
-        doc.add_heading('게임플레이', 1)
-        gameplay = game_design.get("gameplay", {})
-        
-        doc.add_heading('핵심 게임플레이 루프', 2)
-        doc.add_paragraph(gameplay.get('core_gameplay_loop', ''))
-        
-        doc.add_heading('플레이어 액션', 2)
-        for action in gameplay.get("player_actions", []):
-            doc.add_paragraph(action, style='List Bullet')
-        
-        doc.add_heading('진행 시스템', 2)
-        doc.add_paragraph(gameplay.get('progression_system', ''))
-        
-        doc.add_heading('도전 유형', 2)
-        for challenge in gameplay.get("challenge_types", []):
-            doc.add_paragraph(challenge, style='List Bullet')
-        
-        doc.add_heading('보상 시스템', 2)
-        for reward in gameplay.get("reward_systems", []):
-            doc.add_paragraph(reward, style='List Bullet')
-        
-        doc.add_heading('게임 모드', 2)
-        for mode in gameplay.get("game_modes", []):
-            doc.add_paragraph(mode, style='List Bullet')
-        
-        doc.add_heading('조작 방식', 2)
-        doc.add_paragraph(gameplay.get('controls', ''))
-        
-        doc.add_heading('독특한 메커니즘', 2)
-        for mechanic in gameplay.get("unique_mechanics", []):
-            doc.add_paragraph(mechanic, style='List Bullet')
-        
-        # 내러티브
-        doc.add_heading('내러티브', 1)
-        narrative = game_design.get("narrative", {})
-        
-        doc.add_heading('세계관', 2)
-        doc.add_paragraph(narrative.get('setting', ''))
-        
-        doc.add_heading('배경 스토리', 2)
-        doc.add_paragraph(narrative.get('background_lore', ''))
-        
-        doc.add_heading('주요 스토리라인', 2)
-        doc.add_paragraph(narrative.get('main_plot', ''))
-        
-        doc.add_heading('스토리 구조', 2)
-        doc.add_paragraph(narrative.get('plot_structure', ''))
-        
-        doc.add_heading('주요 테마', 2)
-        for theme in narrative.get("themes", []):
-            doc.add_paragraph(theme, style='List Bullet')
-        
-        doc.add_heading('캐릭터', 2)
-        for character in narrative.get("characters", []):
-            doc.add_heading(character.get('name', '이름 없음'), 3)
+        try:
+            # python-docx 라이브러리를 사용하여 Word 문서 생성
+            doc = docx.Document()
+            
+            # 제목 및 기본 정보
+            doc.add_heading(game_design.get('game_title', '게임 기획서'), 0)
+            
+            # 기본 정보 섹션
+            p = doc.add_paragraph()
+            p.add_run('고수준 컨셉: ').bold = True
+            p.add_run(game_design.get('high_concept', ''))
             
             p = doc.add_paragraph()
-            p.add_run('역할: ').bold = True
-            p.add_run(character.get('role', ''))
+            p.add_run('타겟 사용자층: ').bold = True
+            p.add_run(game_design.get('target_audience', ''))
             
             p = doc.add_paragraph()
-            p.add_run('배경: ').bold = True
-            p.add_run(character.get('background', ''))
+            p.add_run('장르: ').bold = True
+            p.add_run(game_design.get('genre', ''))
             
             p = doc.add_paragraph()
-            p.add_run('동기: ').bold = True
-            p.add_run(character.get('motivation', ''))
+            p.add_run('플랫폼: ').bold = True
+            p.add_run(game_design.get('platform', ''))
             
-            p = doc.add_paragraph()
-            p.add_run('캐릭터 아크: ').bold = True
-            p.add_run(character.get('arc', ''))
-        
-        doc.add_heading('내러티브 장치', 2)
-        for device in narrative.get("narrative_devices", []):
-            doc.add_paragraph(device, style='List Bullet')
-        
-        doc.add_heading('플레이어 선택', 2)
-        doc.add_paragraph(narrative.get('player_agency', ''))
-        
-        doc.add_heading('게임플레이와 내러티브 통합', 2)
-        doc.add_paragraph(narrative.get('integration_with_gameplay', ''))
-        
-        # 아트 디렉션
-        doc.add_heading('아트 디렉션', 1)
-        art = game_design.get("art_direction", {})
-        
-        doc.add_heading('시각적 스타일', 2)
-        doc.add_paragraph(art.get('visual_style', ''))
-        
-        doc.add_heading('색상 팔레트', 2)
-        doc.add_paragraph(art.get('color_palette', ''))
-        
-        doc.add_heading('참고 아트 스타일', 2)
-        for ref in art.get("art_references", []):
-            doc.add_paragraph(ref, style='List Bullet')
-        
-        doc.add_heading('캐릭터 디자인', 2)
-        doc.add_paragraph(art.get('character_design', ''))
-        
-        doc.add_heading('환경 디자인', 2)
-        doc.add_paragraph(art.get('environment_design', ''))
-        
-        doc.add_heading('UI 디자인', 2)
-        doc.add_paragraph(art.get('ui_design', ''))
-        
-        doc.add_heading('애니메이션 스타일', 2)
-        doc.add_paragraph(art.get('animation_style', ''))
-        
-        doc.add_heading('조명', 2)
-        doc.add_paragraph(art.get('lighting', ''))
-        
-        doc.add_heading('사운드 디자인', 2)
-        doc.add_paragraph(art.get('sound_design', ''))
-        
-        doc.add_heading('음악 방향', 2)
-        doc.add_paragraph(art.get('music', ''))
+            doc.add_paragraph()
+            
+            # 컨셉 세부사항
+            doc.add_heading('게임 컨셉', 1)
+            concept_details = game_design.get("concept_details", {})
+            
+            doc.add_heading('확장된 컨셉', 2)
+            doc.add_paragraph(concept_details.get('extended_concept', ''))
+            
+            doc.add_heading('차별화 포인트', 2)
+            for usp in concept_details.get("unique_selling_points", []):
+                doc.add_paragraph(usp, style='List Bullet')
+            
+            if 'mood' in concept_details:
+                doc.add_heading('분위기', 2)
+                doc.add_paragraph(concept_details.get('mood', ''))
+            
+            # 게임플레이
+            doc.add_heading('게임플레이', 1)
+            gameplay = game_design.get("gameplay", {})
+            
+            doc.add_heading('핵심 게임플레이 루프', 2)
+            doc.add_paragraph(gameplay.get('core_gameplay_loop', ''))
+            
+            doc.add_heading('플레이어 액션', 2)
+            for action in gameplay.get("player_actions", []):
+                doc.add_paragraph(action, style='List Bullet')
+            
+            doc.add_heading('진행 시스템', 2)
+            doc.add_paragraph(gameplay.get('progression_system', ''))
+            
+            doc.add_heading('도전 유형', 2)
+            for challenge in gameplay.get("challenge_types", []):
+                doc.add_paragraph(challenge, style='List Bullet')
+            
+            doc.add_heading('보상 시스템', 2)
+            for reward in gameplay.get("reward_systems", []):
+                doc.add_paragraph(reward, style='List Bullet')
+            
+            doc.add_heading('게임 모드', 2)
+            for mode in gameplay.get("game_modes", []):
+                doc.add_paragraph(mode, style='List Bullet')
+            
+            if 'controls' in gameplay:
+                doc.add_heading('조작 방식', 2)
+                doc.add_paragraph(gameplay.get('controls', ''))
+            
+            doc.add_heading('독특한 메커니즘', 2)
+            for mechanic in gameplay.get("unique_mechanics", []):
+                doc.add_paragraph(mechanic, style='List Bullet')
+            
+            # 내러티브
+            doc.add_heading('내러티브', 1)
+            narrative = game_design.get("narrative", {})
+            
+            doc.add_heading('세계관', 2)
+            doc.add_paragraph(narrative.get('setting', ''))
+            
+            doc.add_heading('배경 스토리', 2)
+            doc.add_paragraph(narrative.get('background_lore', ''))
+            
+            doc.add_heading('주요 스토리라인', 2)
+            doc.add_paragraph(narrative.get('main_plot', ''))
+            
+            if 'plot_structure' in narrative:
+                doc.add_heading('스토리 구조', 2)
+                doc.add_paragraph(narrative.get('plot_structure', ''))
+            
+            doc.add_heading('주요 테마', 2)
+            for theme in narrative.get("themes", []):
+                doc.add_paragraph(theme, style='List Bullet')
+            
+            # 캐릭터 섹션
+            doc.add_heading('캐릭터', 2)
+            for character in narrative.get("characters", []):
+                doc.add_heading(character.get('name', '이름 없음'), 3)
+                
+                p = doc.add_paragraph()
+                p.add_run('역할: ').bold = True
+                p.add_run(character.get('role', ''))
+                
+                p = doc.add_paragraph()
+                p.add_run('배경: ').bold = True
+                p.add_run(character.get('background', ''))
+                
+                p = doc.add_paragraph()
+                p.add_run('동기: ').bold = True
+                p.add_run(character.get('motivation', ''))
+                
+                p = doc.add_paragraph()
+                p.add_run('캐릭터 아크: ').bold = True
+                p.add_run(character.get('arc', ''))
+            
+            doc.add_heading('내러티브 장치', 2)
+            for device in narrative.get("narrative_devices", []):
+                doc.add_paragraph(device, style='List Bullet')
+            
+            if 'player_agency' in narrative:
+                doc.add_heading('플레이어 선택', 2)
+                doc.add_paragraph(narrative.get('player_agency', ''))
+            
+            if 'integration_with_gameplay' in narrative:
+                doc.add_heading('게임플레이와 내러티브 통합', 2)
+                doc.add_paragraph(narrative.get('integration_with_gameplay', ''))
+            
+            # 아트 디렉션
+            doc.add_heading('아트 디렉션', 1)
+            art = game_design.get("art_direction", {})
+            
+            doc.add_heading('시각적 스타일', 2)
+            doc.add_paragraph(art.get('visual_style', ''))
+            
+            doc.add_heading('색상 팔레트', 2)
+            doc.add_paragraph(art.get('color_palette', ''))
+            
+            if 'art_references' in art:
+                doc.add_heading('참고 아트 스타일', 2)
+                for ref in art.get("art_references", []):
+                    doc.add_paragraph(ref, style='List Bullet')
+            
+            doc.add_heading('캐릭터 디자인', 2)
+            doc.add_paragraph(art.get('character_design', ''))
+            
+            doc.add_heading('환경 디자인', 2)
+            doc.add_paragraph(art.get('environment_design', ''))
+            
+            doc.add_heading('UI 디자인', 2)
+            doc.add_paragraph(art.get('ui_design', ''))
+            
+            doc.add_heading('애니메이션 스타일', 2)
+            doc.add_paragraph(art.get('animation_style', ''))
+            
+            if 'lighting' in art:
+                doc.add_heading('조명', 2)
+                doc.add_paragraph(art.get('lighting', ''))
+            
+            doc.add_heading('사운드 디자인', 2)
+            doc.add_paragraph(art.get('sound_design', ''))
+            
+            doc.add_heading('음악 방향', 2)
+            doc.add_paragraph(art.get('music_direction', ''))
+            
+            # 기술 사양
+            doc.add_heading('기술 사양', 1)
+            tech = game_design.get("technical_specs", {})
+            
+            doc.add_heading('타겟 플랫폼', 2)
+            for platform in tech.get("target_platforms", []):
+                doc.add_paragraph(platform, style='List Bullet')
+            
+            if 'minimum_specs' in tech:
+                doc.add_heading('최소 사양', 2)
+                doc.add_paragraph(tech.get('minimum_specs', ''))
+            
+            if 'recommended_specs' in tech:
+                doc.add_heading('권장 사양', 2)
+                doc.add_paragraph(tech.get('recommended_specs', ''))
+            
+            doc.add_heading('게임 엔진', 2)
+            doc.add_paragraph(tech.get('engine', ''))
+            
+            doc.add_heading('핵심 기술', 2)
+            for technology in tech.get("key_technologies", []):
+                doc.add_paragraph(technology, style='List Bullet')
+            
+            if 'networking' in tech:
+                doc.add_heading('네트워킹', 2)
+                doc.add_paragraph(tech.get('networking', ''))
+            
+            if 'performance_targets' in tech:
+                doc.add_heading('성능 목표', 2)
+                doc.add_paragraph(tech.get('performance_targets', ''))
+            
+            doc.add_heading('개발 도전 과제', 2)
+            for challenge in tech.get("development_challenges", []):
+                doc.add_paragraph(challenge, style='List Bullet')
+            
+            doc.add_heading('에셋 요구사항', 2)
+            doc.add_paragraph(tech.get('asset_requirements', ''))
+            
+            # 수익화 계획
+            doc.add_heading('수익화 계획', 1)
+            monetization = game_design.get("monetization", {})
+            
+            doc.add_heading('수익화 모델', 2)
+            doc.add_paragraph(monetization.get('monetization_model', ''))
+            
+            doc.add_heading('가격 책정', 2)
+            doc.add_paragraph(monetization.get('price_point', ''))
+            
+            doc.add_heading('인앱 구매', 2)
+            doc.add_paragraph(monetization.get('in_app_purchases', ''))
+            
+            doc.add_heading('DLC/확장팩', 2)
+            doc.add_paragraph(monetization.get('dlc_expansion', ''))
+            
+            doc.add_heading('플레이어 유지 전략', 2)
+            for strategy in monetization.get("player_retention_strategies", []):
+                doc.add_paragraph(strategy, style='List Bullet')
+            
+            doc.add_heading('시장 분석', 2)
+            doc.add_paragraph(monetization.get('market_analysis', ''))
+            
+            # 개발 로드맵
+            doc.add_heading('개발 로드맵', 1)
+            roadmap = game_design.get("development_roadmap", {})
+            
+            # 스토리라인 섹션 (있는 경우)
+            if "storyline" in game_design:
+                storyline = game_design.get("storyline", {})
+                
+                doc.add_heading('스토리라인', 1)
+                
+                doc.add_heading('스토리 제목', 2)
+                doc.add_paragraph(storyline.get('title', ''))
+                
+                doc.add_heading('전제', 2)
+                doc.add_paragraph(storyline.get('premise', ''))
+                
+                doc.add_heading('스토리 아크', 2)
+                doc.add_paragraph(storyline.get('story_arc', ''))
+                
+                # 챕터 개요
+                doc.add_heading('챕터 개요', 2)
+                for chapter in storyline.get('chapter_outlines', []):
+                    doc.add_heading(f"챕터 {chapter.get('chapter_number')}: {chapter.get('title')}", 3)
+                    doc.add_paragraph(chapter.get('synopsis', ''))
+                    
+                    p = doc.add_paragraph()
+                    p.add_run("목표:").bold = True
+                    for goal in chapter.get('goals', []):
+                        doc.add_paragraph(goal, style='List Bullet')
+                    
+                    p = doc.add_paragraph()
+                    p.add_run("주요 위치:").bold = True
+                    for location in chapter.get('key_locations', []):
+                        doc.add_paragraph(location, style='List Bullet')
+                    
+                    p = doc.add_paragraph()
+                    p.add_run("주요 사건:").bold = True
+                    for event in chapter.get('key_events', []):
+                        doc.add_paragraph(event, style='List Bullet')
+                    
+                    p = doc.add_paragraph()
+                    p.add_run("도전 과제:").bold = True
+                    for challenge in chapter.get('challenges', []):
+                        doc.add_paragraph(challenge, style='List Bullet')
+                
+                # 챕터 상세 내용 섹션 추가
+                doc.add_heading('챕터 상세 내용', 2)
+                for chapter in storyline.get('chapter_details', []):
+                    doc.add_heading(f"챕터 {chapter.get('chapter_number')}: {chapter.get('title')}", 3)
+                    
+                    # 상세 시놉시스
+                    doc.add_paragraph(chapter.get('detailed_synopsis', ''))
+                    
+                    # 오프닝 씬
+                    p = doc.add_paragraph()
+                    p.add_run('오프닝 씬: ').bold = True
+                    doc.add_paragraph(chapter.get('opening_scene', ''))
+                    
+                    # 주요 사건
+                    p = doc.add_paragraph()
+                    p.add_run('주요 사건:').bold = True
+                    for event in chapter.get('key_events', []):
+                        p = doc.add_paragraph()
+                        p.add_run(f"{event.get('event_title', '')}: ").bold = True
+                        p.add_run(event.get('description', ''))
+                    
+                    # 클라이맥스
+                    p = doc.add_paragraph()
+                    p.add_run('클라이맥스: ').bold = True
+                    doc.add_paragraph(chapter.get('climax', ''))
+                    
+                    # 엔딩
+                    p = doc.add_paragraph()
+                    p.add_run('엔딩: ').bold = True
+                    doc.add_paragraph(chapter.get('ending', ''))
+            
+            # 문서 저장
+            doc.save(file_path)
+            print(f"Word 문서 생성 완료: {file_path}")
+            
+        except Exception as e:
+            print(f"Word 문서 생성 중 오류 발생: {str(e)}")
+            raise

@@ -214,34 +214,42 @@ def download_document():
     """문서 다운로드 API 엔드포인트"""
     data = request.json
     
-    if not data or 'document_path' not in data or 'format' not in data:
-        return jsonify({'error': 'Document path and format are required'}), 400
+    if not data or 'format' not in data:
+        return jsonify({'error': 'Format is required'}), 400
     
-    document_path = data['document_path']
     download_format = data['format']
     
     try:
-        # 문서 형식에 따라 PDF 생성
-        if download_format.lower() == 'pdf':
-            pdf_path = document_path.replace('.md', '.pdf')
-            document_generator._create_pdf(
-                game_design=_load_game_design(document_path), 
-                file_path=pdf_path
-            )
-            document_path = pdf_path
+        # 기획서 데이터 가져오기
+        game_design = data.get('current_design', {})
+        
+        if not game_design:
+            return jsonify({'error': 'Game design data is required'}), 400
+        
+        # 게임 이름으로 파일명 생성
+        game_title = game_design.get('game_title', '게임기획서')
+        filename = f"{game_title.replace(' ', '_')}"
+        
+        # document_generator를 사용하여 해당 형식으로 문서 생성
+        file_path = document_generator.create_document(
+            game_design=game_design,
+            format=download_format,
+            filename=filename
+        )
         
         # 파일이 존재하는지 확인
-        if not os.path.exists(document_path):
-            return jsonify({'error': 'Document not found'}), 404
+        if not os.path.exists(file_path):
+            return jsonify({'error': 'Document creation failed'}), 500
         
         # 파일 다운로드
         return send_file(
-            document_path, 
+            file_path, 
             as_attachment=True, 
-            download_name=os.path.basename(document_path)
+            download_name=os.path.basename(file_path)
         )
     
     except Exception as e:
+        print(f"다운로드 중 오류 발생: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 def _load_game_design(markdown_path):

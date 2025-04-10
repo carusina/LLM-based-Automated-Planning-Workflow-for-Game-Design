@@ -277,13 +277,7 @@
                                     <button class="nav-link" id="art-tab" data-bs-toggle="tab" data-bs-target="#art" type="button" role="tab" aria-controls="art" aria-selected="false">아트 디렉션</button>
                                 </li>
                                 <li class="nav-item" role="presentation">
-                                    <button class="nav-link" id="tech-tab" data-bs-toggle="tab" data-bs-target="#tech" type="button" role="tab" aria-controls="tech" aria-selected="false">기술 사양</button>
-                                </li>
-                                <li class="nav-item" role="presentation">
                                     <button class="nav-link" id="monetization-tab" data-bs-toggle="tab" data-bs-target="#monetization" type="button" role="tab" aria-controls="monetization" aria-selected="false">수익화</button>
-                                </li>
-                                <li class="nav-item" role="presentation">
-                                    <button class="nav-link" id="roadmap-tab" data-bs-toggle="tab" data-bs-target="#roadmap" type="button" role="tab" aria-controls="roadmap" aria-selected="false">로드맵</button>
                                 </li>
                                 <li class="nav-item" role="presentation">
                                     <button class="nav-link" id="storyline-tab" data-bs-toggle="tab" data-bs-target="#storyline" type="button" role="tab" aria-controls="storyline" aria-selected="false">스토리라인</button>
@@ -410,30 +404,6 @@
                                     </div>
                                 </div>
                                 
-                                <!-- 기술 사양 탭 -->
-                                <div class="tab-pane fade" id="tech" role="tabpanel" aria-labelledby="tech-tab">
-                                    <div class="result-section">
-                                        <h4 class="section-title">타겟 플랫폼</h4>
-                                        <ul id="targetPlatforms"></ul>
-                                    </div>
-                                    <div class="result-section">
-                                        <h4 class="section-title">게임 엔진</h4>
-                                        <p id="engine"></p>
-                                    </div>
-                                    <div class="result-section">
-                                        <h4 class="section-title">핵심 기술</h4>
-                                        <ul id="keyTechnologies"></ul>
-                                    </div>
-                                    <div class="result-section">
-                                        <h4 class="section-title">개발 도전 과제</h4>
-                                        <ul id="developmentChallenges"></ul>
-                                    </div>
-                                    <div class="result-section">
-                                        <h4 class="section-title">에셋 요구사항</h4>
-                                        <p id="assetRequirements"></p>
-                                    </div>
-                                </div>
-                                
                                 <!-- 수익화 탭 -->
                                 <div class="tab-pane fade" id="monetization" role="tabpanel" aria-labelledby="monetization-tab">
                                     <div class="result-section">
@@ -459,39 +429,6 @@
                                     <div class="result-section">
                                         <h4 class="section-title">시장 분석</h4>
                                         <p id="marketAnalysis"></p>
-                                    </div>
-                                </div>
-                                
-                                <!-- 로드맵 탭 -->
-                                <div class="tab-pane fade" id="roadmap" role="tabpanel" aria-labelledby="roadmap-tab">
-                                    <div class="result-section">
-                                        <h4 class="section-title">개발 타임라인</h4>
-                                        <div id="developmentTimeline"></div>
-                                    </div>
-                                    <div class="result-section">
-                                        <h4 class="section-title">팀 구성</h4>
-                                        <div>
-                                            <h5>핵심 팀</h5>
-                                            <ul id="coreTeam"></ul>
-                                            <h5>확장 팀</h5>
-                                            <ul id="expandedTeam"></ul>
-                                        </div>
-                                    </div>
-                                    <div class="result-section">
-                                        <h4 class="section-title">예산 추정</h4>
-                                        <p id="budgetEstimate"></p>
-                                    </div>
-                                    <div class="result-section">
-                                        <h4 class="section-title">리스크 평가</h4>
-                                        <ul id="riskAssessment"></ul>
-                                    </div>
-                                    <div class="result-section">
-                                        <h4 class="section-title">테스트 계획</h4>
-                                        <p id="testingPlan"></p>
-                                    </div>
-                                    <div class="result-section">
-                                        <h4 class="section-title">성공 지표</h4>
-                                        <ul id="successMetrics"></ul>
                                     </div>
                                 </div>
                                 
@@ -866,37 +803,6 @@
             document.getElementById('soundDesign').textContent = art.sound_design;
             document.getElementById('musicDirection').textContent = art.music_direction;
             
-            // 기술 사양
-            const tech = data.technical_specs;
-            
-            const targetPlatformsList = document.getElementById('targetPlatforms');
-            targetPlatformsList.innerHTML = '';
-            tech.target_platforms.forEach(platform => {
-                const li = document.createElement('li');
-                li.textContent = platform;
-                targetPlatformsList.appendChild(li);
-            });
-            
-            document.getElementById('engine').textContent = tech.engine;
-            
-            const keyTechnologiesList = document.getElementById('keyTechnologies');
-            keyTechnologiesList.innerHTML = '';
-            tech.key_technologies.forEach(technology => {
-                const li = document.createElement('li');
-                li.textContent = technology;
-                keyTechnologiesList.appendChild(li);
-            });
-            
-            const developmentChallengesList = document.getElementById('developmentChallenges');
-            developmentChallengesList.innerHTML = '';
-            tech.development_challenges.forEach(challenge => {
-                const li = document.createElement('li');
-                li.textContent = challenge;
-                developmentChallengesList.appendChild(li);
-            });
-            
-            document.getElementById('assetRequirements').textContent = tech.asset_requirements;
-            
             // 수익화 계획
             const monetization = data.monetization;
             document.getElementById('monetizationModel').textContent = monetization.monetization_model;
@@ -913,71 +819,6 @@
             });
             
             document.getElementById('marketAnalysis').textContent = monetization.market_analysis;
-            
-            // 개발 로드맵
-            const roadmap = data.development_roadmap;
-            const timeline = roadmap.development_timeline;
-            
-            const developmentTimelineDiv = document.getElementById('developmentTimeline');
-            developmentTimelineDiv.innerHTML = '';
-            
-            // 타임라인 항목 순서
-            const timelineItems = [
-                { key: 'pre_production', label: '사전 제작' },
-                { key: 'prototype', label: '프로토타입' },
-                { key: 'production', label: '본 제작' },
-                { key: 'alpha', label: '알파' },
-                { key: 'beta', label: '베타' },
-                { key: 'gold', label: '골드 마스터' },
-                { key: 'post_launch', label: '출시 후 지원' }
-            ];
-            
-            timelineItems.forEach(item => {
-                if (timeline[item.key]) {
-                    const timelineItem = document.createElement('div');
-                    timelineItem.className = 'mb-2';
-                    timelineItem.innerHTML = `<strong>${item.label}:</strong> ${timeline[item.key]}`;
-                    developmentTimelineDiv.appendChild(timelineItem);
-                }
-            });
-            
-            const team = roadmap.team_structure;
-            
-            const coreTeamList = document.getElementById('coreTeam');
-            coreTeamList.innerHTML = '';
-            team.core_team.forEach(role => {
-                const li = document.createElement('li');
-                li.textContent = role;
-                coreTeamList.appendChild(li);
-            });
-            
-            const expandedTeamList = document.getElementById('expandedTeam');
-            expandedTeamList.innerHTML = '';
-            team.expanded_team.forEach(role => {
-                const li = document.createElement('li');
-                li.textContent = role;
-                expandedTeamList.appendChild(li);
-            });
-            
-            document.getElementById('budgetEstimate').textContent = roadmap.budget_estimate;
-            
-            const riskAssessmentList = document.getElementById('riskAssessment');
-            riskAssessmentList.innerHTML = '';
-            roadmap.risk_assessment.forEach(risk => {
-                const li = document.createElement('li');
-                li.textContent = risk;
-                riskAssessmentList.appendChild(li);
-            });
-            
-            document.getElementById('testingPlan').textContent = roadmap.testing_plan;
-            
-            const successMetricsList = document.getElementById('successMetrics');
-            successMetricsList.innerHTML = '';
-            roadmap.success_metrics.forEach(metric => {
-                const li = document.createElement('li');
-                li.textContent = metric;
-                successMetricsList.appendChild(li);
-            });
             
             // 스토리라인 표시
             const storylineContent = document.getElementById('storylineContent');

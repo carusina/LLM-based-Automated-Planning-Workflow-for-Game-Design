@@ -83,7 +83,6 @@ class GameDesignGenerator:
             "challenge_types": ["도전 유형 1", "도전 유형 2"],
             "reward_systems": ["보상 시스템 1", "보상 시스템 2"],
             "game_modes": ["게임 모드 1", "게임 모드 2"],
-            "controls": "조작 방식 설명",
             "unique_mechanics": ["독특한 메커닉 1", "독특한 메커닉 2"],
             "complexity_assessment": "복잡도 평가 및 접근성"
         }
@@ -108,8 +107,7 @@ class GameDesignGenerator:
 4. 도전 요소 - 플레이어가 극복해야 할 도전 과제들
 5. 보상 시스템 - 플레이어에게 제공되는 보상 방식
 6. 게임 모드 - 다양한 플레이 방식 (싱글플레이어, 멀티플레이어 등)
-7. 조작 방식 - 플레이어의 입력 방식
-8. 독특한 메커닉 - 이 게임만의 차별화된 게임플레이 요소
+7. 독특한 메커닉 - 이 게임만의 차별화된 게임플레이 요소
 
 해당 장르의 관습을 참고하되, 창의적이고 혁신적인 요소를 포함하세요. 플레이어 경험을 최우선으로 고려하여 재미있고 매력적인 게임플레이를 설계해주세요."""
         
@@ -242,74 +240,6 @@ class GameDesignGenerator:
         # LLM을 사용하여 아트 디렉션 생성
         return self.llm_service.generate_structured_output(prompt, output_schema)
     
-    def generate_technical_specs(self, 
-                               game_concept: Dict[str, Any],
-                               gameplay_mechanics: Dict[str, Any] = None,
-                               art_direction: Dict[str, Any] = None) -> Dict[str, Any]:
-        """
-        게임의 기술 사양 생성
-        
-        Args:
-            game_concept: 게임 컨셉 정보
-            gameplay_mechanics: 게임플레이 메커니즘 정보 (선택 사항)
-            art_direction: 아트 디렉션 정보 (선택 사항)
-            
-        Returns:
-            기술 사양 정보
-        """
-        # 출력 스키마 정의
-        output_schema = {
-            "target_platforms": ["타겟 플랫폼 1", "타겟 플랫폼 2"],
-            "minimum_specs": "최소 사양",
-            "recommended_specs": "권장 사양",
-            "engine": "게임 엔진 추천",
-            "key_technologies": ["핵심 기술 1", "핵심 기술 2"],
-            "networking": "네트워킹 요구사항 (멀티플레이어의 경우)",
-            "performance_targets": "성능 목표 (FPS, 해상도 등)",
-            "development_challenges": ["예상 기술적 도전 1", "예상 기술적 도전 2"],
-            "asset_requirements": "에셋 요구사항",
-            "estimated_development_resources": "예상 개발 리소스 (인력, 시간 등)"
-        }
-        
-        # 게임 컨셉에서 필요한 정보 추출
-        concept_str = f"게임 제목: {game_concept.get('title', '제목 미정')}\n"
-        concept_str += f"컨셉: {game_concept.get('high_concept', '')}\n"
-        concept_str += f"장르: {game_concept.get('genre', '')}"
-        
-        # 게임플레이 메커니즘 정보가 있으면 추가
-        mechanics_str = ""
-        if gameplay_mechanics:
-            mechanics_str = f"\n\n게임플레이 메커니즘:\n"
-            mechanics_str += f"- 핵심 루프: {gameplay_mechanics.get('core_gameplay_loop', '')}\n"
-            mechanics_str += f"- 게임 모드: {', '.join(gameplay_mechanics.get('game_modes', []))}"
-        
-        # 아트 디렉션 정보가 있으면 추가
-        art_str = ""
-        if art_direction:
-            art_str = f"\n\n아트 디렉션:\n"
-            art_str += f"- 시각적 스타일: {art_direction.get('visual_style', '')}\n"
-            art_str += f"- 애니메이션 스타일: {art_direction.get('animation_style', '')}"
-        
-        # 프롬프트 구성
-        prompt = f"""다음 게임 컨셉을 바탕으로 기술 사양을 개발해주세요:
-
-{concept_str}{mechanics_str}{art_str}
-
-다음 요소를 포함한 현실적이고 구체적인 기술 사양을 제안해주세요:
-1. 타겟 플랫폼 - 게임이 출시될 플랫폼
-2. 시스템 요구사항 - 최소 및 권장 사양
-3. 게임 엔진 - 적합한 게임 엔진 추천
-4. 핵심 기술 - 게임 구현에 필요한 핵심 기술
-5. 네트워킹 요구사항 - 멀티플레이어 게임의 경우
-6. 성능 목표 - 프레임레이트, 해상도 등
-7. 개발 도전 과제 - 예상되는 기술적 어려움
-8. 개발 리소스 - 필요한 인력, 시간, 비용 추정
-
-현재 게임 개발 기술 트렌드와 제약을 고려하여 실현 가능한 기술 사양을 제시해주세요."""
-        
-        # LLM을 사용하여 기술 사양 생성
-        return self.llm_service.generate_structured_output(prompt, output_schema)
-    
     def generate_monetization_plan(self, 
                                  game_concept: Dict[str, Any],
                                  gameplay_mechanics: Dict[str, Any] = None,
@@ -373,75 +303,6 @@ class GameDesignGenerator:
 게임 경험을 저해하지 않으면서도 지속 가능한 수익을 창출할 수 있는 균형 잡힌 접근법을 제시해주세요. 타겟 사용자층의 특성과 선호도를 고려한 수익화 전략을 개발해주세요."""
         
         # LLM을 사용하여 수익화 계획 생성
-        return self.llm_service.generate_structured_output(prompt, output_schema)
-    
-    def generate_development_roadmap(self, 
-                                   game_concept: Dict[str, Any],
-                                   technical_specs: Dict[str, Any] = None) -> Dict[str, Any]:
-        """
-        게임 개발 로드맵 생성
-        
-        Args:
-            game_concept: 게임 컨셉 정보
-            technical_specs: 기술 사양 정보 (선택 사항)
-            
-        Returns:
-            개발 로드맵 정보
-        """
-        # 출력 스키마 정의
-        output_schema = {
-            "development_timeline": {
-                "pre_production": "사전 제작 단계 (기간 및 주요 마일스톤)",
-                "prototype": "프로토타입 단계 (기간 및 주요 마일스톤)",
-                "production": "본 제작 단계 (기간 및 주요 마일스톤)",
-                "alpha": "알파 단계 (기간 및 주요 마일스톤)",
-                "beta": "베타 단계 (기간 및 주요 마일스톤)",
-                "gold": "골드 마스터 (기간 및 주요 마일스톤)",
-                "post_launch": "출시 후 지원 (기간 및 주요 마일스톤)"
-            },
-            "team_structure": {
-                "core_team": ["핵심 팀원 역할 1", "핵심 팀원 역할 2"],
-                "expanded_team": ["확장 팀원 역할 1", "확장 팀원 역할 2"],
-                "outsourcing": ["외주 영역 1", "외주 영역 2"]
-            },
-            "budget_estimate": "예상 개발 예산 범위",
-            "risk_assessment": ["주요 리스크 1", "주요 리스크 2"],
-            "testing_plan": "테스트 계획 개요",
-            "marketing_timeline": "마케팅 타임라인 개요",
-            "key_deliverables": ["주요 산출물 1", "주요 산출물 2"],
-            "success_metrics": ["성공 지표 1", "성공 지표 2"]
-        }
-        
-        # 게임 컨셉에서 필요한 정보 추출
-        concept_str = f"게임 제목: {game_concept.get('title', '제목 미정')}\n"
-        concept_str += f"컨셉: {game_concept.get('high_concept', '')}\n"
-        concept_str += f"장르: {game_concept.get('genre', '')}"
-        
-        # 기술 사양 정보가 있으면 추가
-        tech_str = ""
-        if technical_specs:
-            tech_str = f"\n\n기술 사양:\n"
-            tech_str += f"- 타겟 플랫폼: {', '.join(technical_specs.get('target_platforms', []))}\n"
-            tech_str += f"- 게임 엔진: {technical_specs.get('engine', '')}\n"
-            tech_str += f"- 개발 도전 과제: {', '.join(technical_specs.get('development_challenges', []))}"
-        
-        # 프롬프트 구성
-        prompt = f"""다음 게임 컨셉을 바탕으로 개발 로드맵을 설계해주세요:
-
-{concept_str}{tech_str}
-
-다음 요소를 포함한 현실적이고 상세한 개발 로드맵을 제안해주세요:
-1. 개발 타임라인 - 사전 제작부터 출시 후 지원까지의 단계별 일정
-2. 팀 구성 - 필요한 팀원 역할 및 구조
-3. 예산 추정 - 대략적인 개발 예산 범위
-4. 리스크 평가 - 주요 개발 리스크 및 대응 전략
-5. 테스트 계획 - QA 및 사용자 테스트 접근법
-6. 마케팅 타임라인 - 주요 마케팅 활동 및 일정
-7. 성공 지표 - 게임의 성공을 측정할 주요 지표
-
-이 규모와 장르의 게임 개발에 대한 현실적인 이해를 바탕으로 실행 가능한 로드맵을 제시해주세요. 인디 스튜디오부터 중소규모 개발사까지 다양한 개발 환경을 고려하여 조정 가능한 계획을 제안해주세요."""
-        
-        # LLM을 사용하여 개발 로드맵 생성
         return self.llm_service.generate_structured_output(prompt, output_schema)
     
     def analyze_competitor(self, competitor_name: str) -> Dict[str, Any]:
@@ -672,27 +533,14 @@ class GameDesignGenerator:
             narrative_elements=narrative_info
         )
         
-        # 5. 기술 사양 생성
-        tech_info = self.generate_technical_specs(
-            game_concept=concept_info,
-            gameplay_mechanics=gameplay_info,
-            art_direction=art_info
-        )
-        
-        # 6. 수익화 계획 생성
+        # 5. 수익화 계획 생성
         monetization_info = self.generate_monetization_plan(
             game_concept=concept_info,
             gameplay_mechanics=gameplay_info,
             target_audience=target_audience
         )
         
-        # 7. 개발 로드맵 생성
-        roadmap_info = self.generate_development_roadmap(
-            game_concept=concept_info,
-            technical_specs=tech_info
-        )
-        
-        # 8. 경쟁 분석 (competitive_analysis가 제공된 경우)
+        # 6. 경쟁 분석 (competitive_analysis가 제공된 경우)
         competition_info = {}
         if competitive_analysis and len(competitive_analysis) > 0:
             competition_info["competitors"] = []
@@ -711,9 +559,7 @@ class GameDesignGenerator:
             "gameplay": gameplay_info,
             "narrative": narrative_info,
             "art_direction": art_info,
-            "technical_specs": tech_info,
-            "monetization": monetization_info,
-            "development_roadmap": roadmap_info
+            "monetization": monetization_info
         }
         
         if competition_info:

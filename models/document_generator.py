@@ -125,8 +125,6 @@ class DocumentGenerator:
                 f.write(f"- {mode}\n")
             f.write("\n")
             
-            f.write(f"### 조작 방식\n{gameplay.get('controls', '')}\n\n")
-            
             f.write("### 독특한 메커니즘\n")
             for mechanic in gameplay.get("unique_mechanics", []):
                 f.write(f"- {mechanic}\n")
@@ -180,35 +178,6 @@ class DocumentGenerator:
             f.write(f"### 사운드 디자인\n{art.get('sound_design', '')}\n\n")
             f.write(f"### 음악 방향\n{art.get('music_direction', '')}\n\n")
             
-            # 기술 사양
-            f.write("## 기술 사양\n\n")
-            tech = game_design.get("technical_specs", {})
-            
-            f.write("### 타겟 플랫폼\n")
-            for platform in tech.get("target_platforms", []):
-                f.write(f"- {platform}\n")
-            f.write("\n")
-            
-            f.write(f"### 최소 사양\n{tech.get('minimum_specs', '')}\n\n")
-            f.write(f"### 권장 사양\n{tech.get('recommended_specs', '')}\n\n")
-            f.write(f"### 게임 엔진\n{tech.get('engine', '')}\n\n")
-            
-            f.write("### 핵심 기술\n")
-            for technology in tech.get("key_technologies", []):
-                f.write(f"- {technology}\n")
-            f.write("\n")
-            
-            f.write(f"### 네트워킹\n{tech.get('networking', '')}\n\n")
-            f.write(f"### 성능 목표\n{tech.get('performance_targets', '')}\n\n")
-            
-            f.write("### 개발 도전 과제\n")
-            for challenge in tech.get("development_challenges", []):
-                f.write(f"- {challenge}\n")
-            f.write("\n")
-            
-            f.write(f"### 에셋 요구사항\n{tech.get('asset_requirements', '')}\n\n")
-            f.write(f"### 예상 개발 리소스\n{tech.get('estimated_development_resources', '')}\n\n")
-            
             # 수익화 계획
             f.write("## 수익화 계획\n\n")
             monetization = game_design.get("monetization", {})
@@ -228,58 +197,6 @@ class DocumentGenerator:
             
             f.write(f"### 수익 예상\n{monetization.get('revenue_projections', '')}\n\n")
             f.write(f"### 시장 분석\n{monetization.get('market_analysis', '')}\n\n")
-            
-            # 개발 로드맵
-            f.write("## 개발 로드맵\n\n")
-            roadmap = game_design.get("development_roadmap", {})
-            timeline = roadmap.get("development_timeline", {})
-            
-            f.write("### 개발 타임라인\n")
-            f.write(f"- **사전 제작:** {timeline.get('pre_production', '')}\n")
-            f.write(f"- **프로토타입:** {timeline.get('prototype', '')}\n")
-            f.write(f"- **본 제작:** {timeline.get('production', '')}\n")
-            f.write(f"- **알파:** {timeline.get('alpha', '')}\n")
-            f.write(f"- **베타:** {timeline.get('beta', '')}\n")
-            f.write(f"- **골드 마스터:** {timeline.get('gold', '')}\n")
-            f.write(f"- **출시 후 지원:** {timeline.get('post_launch', '')}\n\n")
-            
-            team = roadmap.get("team_structure", {})
-            f.write("### 팀 구성\n")
-            
-            f.write("#### 핵심 팀\n")
-            for role in team.get("core_team", []):
-                f.write(f"- {role}\n")
-            f.write("\n")
-            
-            f.write("#### 확장 팀\n")
-            for role in team.get("expanded_team", []):
-                f.write(f"- {role}\n")
-            f.write("\n")
-            
-            f.write("#### 외주\n")
-            for outsource in team.get("outsourcing", []):
-                f.write(f"- {outsource}\n")
-            f.write("\n")
-            
-            f.write(f"### 예산 추정\n{roadmap.get('budget_estimate', '')}\n\n")
-            
-            f.write("### 리스크 평가\n")
-            for risk in roadmap.get("risk_assessment", []):
-                f.write(f"- {risk}\n")
-            f.write("\n")
-            
-            f.write(f"### 테스트 계획\n{roadmap.get('testing_plan', '')}\n\n")
-            f.write(f"### 마케팅 타임라인\n{roadmap.get('marketing_timeline', '')}\n\n")
-            
-            f.write("### 주요 산출물\n")
-            for deliverable in roadmap.get("key_deliverables", []):
-                f.write(f"- {deliverable}\n")
-            f.write("\n")
-            
-            f.write("### 성공 지표\n")
-            for metric in roadmap.get("success_metrics", []):
-                f.write(f"- {metric}\n")
-            f.write("\n")
             
             # 경쟁 분석 (있는 경우)
             if "competition_analysis" in game_design:
@@ -656,10 +573,6 @@ class DocumentGenerator:
             for mode in gameplay.get("game_modes", []):
                 doc.add_paragraph(mode, style='List Bullet')
             
-            if 'controls' in gameplay:
-                doc.add_heading('조작 방식', 2)
-                doc.add_paragraph(gameplay.get('controls', ''))
-            
             doc.add_heading('독특한 메커니즘', 2)
             for mechanic in gameplay.get("unique_mechanics", []):
                 doc.add_paragraph(mechanic, style='List Bullet')
@@ -755,44 +668,6 @@ class DocumentGenerator:
             doc.add_heading('음악 방향', 2)
             doc.add_paragraph(art.get('music_direction', ''))
             
-            # 기술 사양
-            doc.add_heading('기술 사양', 1)
-            tech = game_design.get("technical_specs", {})
-            
-            doc.add_heading('타겟 플랫폼', 2)
-            for platform in tech.get("target_platforms", []):
-                doc.add_paragraph(platform, style='List Bullet')
-            
-            if 'minimum_specs' in tech:
-                doc.add_heading('최소 사양', 2)
-                doc.add_paragraph(tech.get('minimum_specs', ''))
-            
-            if 'recommended_specs' in tech:
-                doc.add_heading('권장 사양', 2)
-                doc.add_paragraph(tech.get('recommended_specs', ''))
-            
-            doc.add_heading('게임 엔진', 2)
-            doc.add_paragraph(tech.get('engine', ''))
-            
-            doc.add_heading('핵심 기술', 2)
-            for technology in tech.get("key_technologies", []):
-                doc.add_paragraph(technology, style='List Bullet')
-            
-            if 'networking' in tech:
-                doc.add_heading('네트워킹', 2)
-                doc.add_paragraph(tech.get('networking', ''))
-            
-            if 'performance_targets' in tech:
-                doc.add_heading('성능 목표', 2)
-                doc.add_paragraph(tech.get('performance_targets', ''))
-            
-            doc.add_heading('개발 도전 과제', 2)
-            for challenge in tech.get("development_challenges", []):
-                doc.add_paragraph(challenge, style='List Bullet')
-            
-            doc.add_heading('에셋 요구사항', 2)
-            doc.add_paragraph(tech.get('asset_requirements', ''))
-            
             # 수익화 계획
             doc.add_heading('수익화 계획', 1)
             monetization = game_design.get("monetization", {})
@@ -815,10 +690,6 @@ class DocumentGenerator:
             
             doc.add_heading('시장 분석', 2)
             doc.add_paragraph(monetization.get('market_analysis', ''))
-            
-            # 개발 로드맵
-            doc.add_heading('개발 로드맵', 1)
-            roadmap = game_design.get("development_roadmap", {})
             
             # 스토리라인 섹션 (있는 경우)
             if "storyline" in game_design:

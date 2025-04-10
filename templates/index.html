@@ -967,67 +967,137 @@
                 titleSection.className = 'result-section';
                 titleSection.innerHTML = `
                     <h4 class="section-title">스토리 제목</h4>
-                    <p>${storyline.title}</p>
+                    <p>${storyline.title || "제목 없음"}</p>
                     
                     <h4 class="section-title">전제</h4>
-                    <p>${storyline.premise}</p>
+                    <p>${storyline.premise || "정보 없음"}</p>
                     
                     <h4 class="section-title">스토리 아크</h4>
-                    <p>${storyline.story_arc}</p>
+                    <p>${storyline.story_arc || "정보 없음"}</p>
                 `;
                 storylineContent.appendChild(titleSection);
                 
                 // 챕터 개요
-                const chaptersSection = document.createElement('div');
-                chaptersSection.className = 'result-section';
-                chaptersSection.innerHTML = '<h4 class="section-title">챕터 개요</h4>';
-                
-                const chaptersAccordion = document.createElement('div');
-                chaptersAccordion.className = 'accordion';
-                chaptersAccordion.id = 'chaptersAccordion';
-                
-                storyline.chapter_outlines.forEach((chapter, index) => {
-                    const chapterItem = document.createElement('div');
-                    chapterItem.className = 'accordion-item';
+                if (storyline.chapter_outlines && storyline.chapter_outlines.length > 0) {
+                    const chaptersSection = document.createElement('div');
+                    chaptersSection.className = 'result-section';
+                    chaptersSection.innerHTML = '<h4 class="section-title">챕터 개요</h4>';
                     
-                    chapterItem.innerHTML = `
-                        <h2 class="accordion-header" id="chapter-heading-${index}">
-                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#chapter-collapse-${index}" aria-expanded="false" aria-controls="chapter-collapse-${index}">
-                                챕터 ${chapter.chapter_number}: ${chapter.title}
-                            </button>
-                        </h2>
-                        <div id="chapter-collapse-${index}" class="accordion-collapse collapse" aria-labelledby="chapter-heading-${index}" data-bs-parent="#chaptersAccordion">
-                            <div class="accordion-body">
-                                <p><strong>개요:</strong> ${chapter.synopsis}</p>
-                                
-                                <h6>목표:</h6>
-                                <ul>
-                                    ${chapter.goals.map(goal => `<li>${goal}</li>`).join('')}
-                                </ul>
-                                
-                                <h6>주요 위치:</h6>
-                                <ul>
-                                    ${chapter.key_locations.map(location => `<li>${location}</li>`).join('')}
-                                </ul>
-                                
-                                <h6>주요 사건:</h6>
-                                <ul>
-                                    ${chapter.key_events.map(event => `<li>${event}</li>`).join('')}
-                                </ul>
-                                
-                                <h6>도전 과제:</h6>
-                                <ul>
-                                    ${chapter.challenges.map(challenge => `<li>${challenge}</li>`).join('')}
-                                </ul>
+                    const chaptersAccordion = document.createElement('div');
+                    chaptersAccordion.className = 'accordion';
+                    chaptersAccordion.id = 'chaptersAccordion';
+                    
+                    storyline.chapter_outlines.forEach((chapter, index) => {
+                        const chapterItem = document.createElement('div');
+                        chapterItem.className = 'accordion-item';
+                        
+                        const chapterNumber = chapter.chapter_number || (index + 1);
+                        const chapterTitle = chapter.title || `챕터 ${chapterNumber}`;
+                        
+                        chapterItem.innerHTML = `
+                            <h2 class="accordion-header" id="chapter-heading-${index}">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#chapter-collapse-${index}" aria-expanded="false" aria-controls="chapter-collapse-${index}">
+                                    챕터 ${chapterNumber}: ${chapterTitle}
+                                </button>
+                            </h2>
+                            <div id="chapter-collapse-${index}" class="accordion-collapse collapse" aria-labelledby="chapter-heading-${index}" data-bs-parent="#chaptersAccordion">
+                                <div class="accordion-body">
+                                    <p><strong>개요:</strong> ${chapter.synopsis || "정보 없음"}</p>
+                                    
+                                    <h6>목표:</h6>
+                                    <ul>
+                                        ${Array.isArray(chapter.goals) ? chapter.goals.map(goal => `<li>${goal}</li>`).join('') : '<li>정보 없음</li>'}
+                                    </ul>
+                                    
+                                    <h6>주요 위치:</h6>
+                                    <ul>
+                                        ${Array.isArray(chapter.key_locations) ? chapter.key_locations.map(location => `<li>${location}</li>`).join('') : '<li>정보 없음</li>'}
+                                    </ul>
+                                    
+                                    <h6>주요 사건:</h6>
+                                    <ul>
+                                        ${Array.isArray(chapter.key_events) ? chapter.key_events.map(event => `<li>${event}</li>`).join('') : '<li>정보 없음</li>'}
+                                    </ul>
+                                    
+                                    <h6>도전 과제:</h6>
+                                    <ul>
+                                        ${Array.isArray(chapter.challenges) ? chapter.challenges.map(challenge => `<li>${challenge}</li>`).join('') : '<li>정보 없음</li>'}
+                                    </ul>
+                                </div>
                             </div>
-                        </div>
-                    `;
+                        `;
+                        
+                        chaptersAccordion.appendChild(chapterItem);
+                    });
                     
-                    chaptersAccordion.appendChild(chapterItem);
-                });
+                    chaptersSection.appendChild(chaptersAccordion);
+                    storylineContent.appendChild(chaptersSection);
+                }
                 
-                chaptersSection.appendChild(chaptersAccordion);
-                storylineContent.appendChild(chaptersSection);
+                // 챕터 상세 내용 추가 - 이 부분이 추가됩니다
+                if (storyline.chapter_details && storyline.chapter_details.length > 0) {
+                    const chapterDetailsSection = document.createElement('div');
+                    chapterDetailsSection.className = 'result-section';
+                    chapterDetailsSection.innerHTML = '<h4 class="section-title">챕터 상세 내용</h4>';
+                    
+                    const detailsAccordion = document.createElement('div');
+                    detailsAccordion.className = 'accordion';
+                    detailsAccordion.id = 'chapterDetailsAccordion';
+                    
+                    storyline.chapter_details.forEach((chapter, index) => {
+                        const chapterItem = document.createElement('div');
+                        chapterItem.className = 'accordion-item';
+                        
+                        const chapterNumber = chapter.chapter_number || (index + 1);
+                        const chapterTitle = chapter.title || `챕터 ${chapterNumber}`;
+                        
+                        chapterItem.innerHTML = `
+                            <h2 class="accordion-header" id="detail-heading-${index}">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#detail-collapse-${index}" aria-expanded="false" aria-controls="detail-collapse-${index}">
+                                    챕터 ${chapterNumber}: ${chapterTitle}
+                                </button>
+                            </h2>
+                            <div id="detail-collapse-${index}" class="accordion-collapse collapse" aria-labelledby="detail-heading-${index}" data-bs-parent="#chapterDetailsAccordion">
+                                <div class="accordion-body">
+                                    <p><strong>상세 시놉시스:</strong> ${chapter.detailed_synopsis || "정보 없음"}</p>
+                                    
+                                    <h6>오프닝 씬:</h6>
+                                    <p>${chapter.opening_scene || "정보 없음"}</p>
+                                    
+                                    <h6>주요 사건:</h6>
+                                    ${Array.isArray(chapter.key_events) ? 
+                                        chapter.key_events.map(event => `
+                                            <div class="card mb-2">
+                                                <div class="card-header">
+                                                    <strong>${event.event_title || "이벤트"}</strong>
+                                                </div>
+                                                <div class="card-body">
+                                                    <p>${event.description || "설명 없음"}</p>
+                                                    <p><strong>플레이어 관여:</strong> ${event.player_involvement || "정보 없음"}</p>
+                                                </div>
+                                            </div>
+                                        `).join('') 
+                                        : '<p>정보 없음</p>'
+                                    }
+                                    
+                                    <h6>클라이맥스:</h6>
+                                    <p>${chapter.climax || "정보 없음"}</p>
+                                    
+                                    <h6>엔딩:</h6>
+                                    <p>${chapter.ending || "정보 없음"}</p>
+                                    
+                                    <h6>다음 챕터와의 연결:</h6>
+                                    <p>${chapter.connection_to_next_chapter || "정보 없음"}</p>
+                                </div>
+                            </div>
+                        `;
+                        
+                        detailsAccordion.appendChild(chapterItem);
+                    });
+                    
+                    chapterDetailsSection.appendChild(detailsAccordion);
+                    storylineContent.appendChild(chapterDetailsSection);
+                }
                 
                 // 스토리 분기
                 if (storyline.story_branches && storyline.story_branches.story_branches) {

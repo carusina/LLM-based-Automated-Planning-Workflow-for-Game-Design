@@ -77,6 +77,7 @@
 - **app.py**: 메인 애플리케이션 파일 및 API 엔드포인트
 - **models/llm_service.py**: LLM API 통합을 위한 서비스 클래스
 - **models/game_design_generator.py**: 게임 기획 생성 로직
+- **models/storyline_generator.py**: 게임 스토리라인 생성 로직
 - **models/document_generator.py**: 다양한 형식의 문서 생성 로직
 - **templates/index.html**: 웹 인터페이스 템플릿
 

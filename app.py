@@ -1,5 +1,5 @@
 # app.py
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -7,6 +7,7 @@ import anthropic
 from models.llm_service import LLMService
 from models.game_design_generator import GameDesignGenerator
 from models.document_generator import DocumentGenerator
+from models.storyline_generator import StorylineGenerator
 
 # 환경 변수 로드
 load_dotenv()
@@ -32,11 +33,15 @@ llm_service = LLMService(
 game_design_generator = GameDesignGenerator(llm_service)
 document_generator = DocumentGenerator()
 
+# 스토리라인 생성기 초기화
+storyline_generator = StorylineGenerator(llm_service)
+
 @app.route('/')
 def index():
     """메인 페이지 렌더링"""
     return render_template('index.html')
 
+# /generate 라우트 수정 부분
 @app.route('/generate', methods=['POST'])
 def generate_game_design():
     """게임 기획 자동 생성 API 엔드포인트"""
@@ -58,6 +63,11 @@ def generate_game_design():
     story_elements = data.get('story_elements', {})
     competitive_analysis = data.get('competitive_analysis', [])
     
+    # 스토리라인 생성 여부
+    generate_storyline = data.get('generate_storyline', False)
+    num_chapters = data.get('num_chapters', 5)
+    num_branches = data.get('num_branches', 3)
+    
     # LLM을 통한 게임 기획 생성
     try:
         game_design = game_design_generator.generate_complete_design(
@@ -70,6 +80,18 @@ def generate_game_design():
             story_elements=story_elements,
             competitive_analysis=competitive_analysis
         )
+        
+        # 스토리라인 생성이 요청된 경우
+        storyline = None
+        if generate_storyline and 'narrative' in game_design:
+            storyline = storyline_generator.generate_complete_storyline(
+                narrative_concept=game_design['narrative'],
+                num_chapters=num_chapters,
+                num_branches=num_branches
+            )
+            
+            # 게임 디자인에 스토리라인 추가
+            game_design['storyline'] = storyline
         
         # 문서 생성 및 저장
         document_path = document_generator.create_document(game_design)
@@ -147,6 +169,98 @@ def generate_specific_content():
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    
+@app.route('/generate-storyline', methods=['POST'])
+def generate_storyline():
+    """게임 스토리라인 생성 API 엔드포인트"""
+    data = request.json
+    
+    if not data or 'narrative_concept' not in data:
+        return jsonify({'error': 'Narrative concept is required'}), 400
+    
+    narrative_concept = data.get('narrative_concept', {})
+    num_chapters = data.get('num_chapters', 5)
+    num_branches = data.get('num_branches', 3)
+    
+    try:
+        # 스토리라인 생성
+        storyline = storyline_generator.generate_complete_storyline(
+            narrative_concept=narrative_concept,
+            num_chapters=num_chapters,
+            num_branches=num_branches
+        )
+        
+        # 문서 생성 및 저장
+        document_path = document_generator.create_document(
+            game_design={
+                "game_title": storyline.get("title", "게임 스토리라인"),
+                "narrative": narrative_concept,
+                "storyline": storyline
+            },
+            format="markdown"
+        )
+        
+        return jsonify({
+            'success': True,
+            'storyline': storyline,
+            'document_path': document_path
+        })
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/download', methods=['POST'])
+def download_document():
+    """문서 다운로드 API 엔드포인트"""
+    data = request.json
+    
+    if not data or 'document_path' not in data or 'format' not in data:
+        return jsonify({'error': 'Document path and format are required'}), 400
+    
+    document_path = data['document_path']
+    download_format = data['format']
+    
+    try:
+        # 문서 형식에 따라 PDF 생성
+        if download_format.lower() == 'pdf':
+            pdf_path = document_path.replace('.md', '.pdf')
+            document_generator._create_pdf(
+                game_design=_load_game_design(document_path), 
+                file_path=pdf_path
+            )
+            document_path = pdf_path
+        
+        # 파일이 존재하는지 확인
+        if not os.path.exists(document_path):
+            return jsonify({'error': 'Document not found'}), 404
+        
+        # 파일 다운로드
+        return send_file(
+            document_path, 
+            as_attachment=True, 
+            download_name=os.path.basename(document_path)
+        )
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+def _load_game_design(markdown_path):
+    """마크다운 파일에서 게임 기획 정보 로드"""
+    try:
+        with open(markdown_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+            # 여기서 게임 기획서 정보를 다시 재구성해야 합니다.
+            # 간단한 구현을 위해 임시로 기본 딕셔너리 반환
+            return {
+                "game_title": "Game Design",
+                "narrative": {},
+                "gameplay": {},
+                "art_direction": {}
+            }
+    except Exception as e:
+        print(f"게임 기획서 로드 중 오류: {e}")
+        return {}
+    
 
 if __name__ == '__main__':
     app.run(debug=True)

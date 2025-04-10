@@ -45,17 +45,27 @@ class DocumentGenerator:
             filename = f"{game_title.replace(' ', '_')}_{timestamp}"
         
         # 파일 경로 생성
-        if format.lower() == "markdown":
-            file_path = os.path.join(self.output_dir, f"{filename}.md")
-            self._create_markdown(game_design, file_path)
-        elif format.lower() == "pdf":
-            file_path = os.path.join(self.output_dir, f"{filename}.pdf")
-            self._create_pdf(game_design, file_path)
-        elif format.lower() == "docx":
-            file_path = os.path.join(self.output_dir, f"{filename}.docx")
-            self._create_docx(game_design, file_path)
-        else:
-            raise ValueError(f"지원되지 않는 형식: {format}")
+        print(f"생성 요청된 형식: {format}")
+        print(f"생성될 파일 경로: {os.path.join(self.output_dir, f'{filename}.*')}")
+        
+        try:
+            if format.lower() == "markdown":
+                file_path = os.path.join(self.output_dir, f"{filename}.md")
+                self._create_markdown(game_design, file_path)
+                print(f"마크다운 파일 생성 완료: {file_path}")
+            elif format.lower() == "pdf":
+                file_path = os.path.join(self.output_dir, f"{filename}.pdf")
+                self._create_pdf(game_design, file_path)
+                print(f"PDF 파일 생성 완료: {file_path}")
+            elif format.lower() == "docx":
+                file_path = os.path.join(self.output_dir, f"{filename}.docx")
+                self._create_docx(game_design, file_path)
+                print(f"Word 문서 생성 완료: {file_path}")
+            else:
+                raise ValueError(f"지원되지 않는 형식: {format}")
+        except Exception as e:
+            print(f"문서 생성 중 오류 발생: {e}")
+            raise
         
         return file_path
     
@@ -313,6 +323,127 @@ class DocumentGenerator:
                     for lesson in competitor.get("lessons", []):
                         f.write(f"- {lesson}\n")
                     f.write("\n")
+
+            # 스토리라인 정보가 있는 경우
+            if "storyline" in game_design:
+                storyline = game_design.get("storyline", {})
+                
+                f.write("## 스토리라인\n\n")
+                f.write(f"### 스토리 제목\n{storyline.get('title', '')}\n\n")
+                f.write(f"### 전제\n{storyline.get('premise', '')}\n\n")
+                f.write(f"### 스토리 아크\n{storyline.get('story_arc', '')}\n\n")
+                
+                f.write("### 주요 테마\n")
+                for theme in storyline.get('themes', []):
+                    f.write(f"- {theme}\n")
+                f.write("\n")
+                
+                f.write("### 주요 플롯 포인트\n")
+                for plot_point in storyline.get('major_plot_points', []):
+                    f.write(f"- {plot_point}\n")
+                f.write("\n")
+                
+                f.write("### 가능한 엔딩\n")
+                for ending in storyline.get('possible_endings', []):
+                    f.write(f"- {ending}\n")
+                f.write("\n")
+                
+                # 챕터 개요
+                f.write("### 챕터 개요\n\n")
+                for chapter in storyline.get('chapter_outlines', []):
+                    chapter_num = chapter.get('chapter_number', '')
+                    chapter_title = chapter.get('title', '')
+                    chapter_synopsis = chapter.get('synopsis', '')
+                    
+                    f.write(f"#### 챕터 {chapter_num}: {chapter_title}\n")
+                    f.write(f"{chapter_synopsis}\n\n")
+                    
+                    f.write("**목표:**\n")
+                    for goal in chapter.get('goals', []):
+                        f.write(f"- {goal}\n")
+                    f.write("\n")
+                    
+                    f.write("**주요 위치:**\n")
+                    for location in chapter.get('key_locations', []):
+                        f.write(f"- {location}\n")
+                    f.write("\n")
+                    
+                    f.write("**주요 사건:**\n")
+                    for event in chapter.get('key_events', []):
+                        f.write(f"- {event}\n")
+                    f.write("\n")
+                    
+                    f.write("**도전 과제:**\n")
+                    for challenge in chapter.get('challenges', []):
+                        f.write(f"- {challenge}\n")
+                    f.write("\n")
+                
+                # 챕터 상세 내용
+                f.write("### 챕터 상세 내용\n\n")
+                for chapter in storyline.get('chapter_details', []):
+                    chapter_num = chapter.get('chapter_number', '')
+                    chapter_title = chapter.get('title', '')
+                    
+                    f.write(f"#### 챕터 {chapter_num}: {chapter_title}\n")
+                    f.write(f"{chapter.get('detailed_synopsis', '')}\n\n")
+                    
+                    f.write("**오프닝 씬:**\n")
+                    f.write(f"{chapter.get('opening_scene', '')}\n\n")
+                    
+                    f.write("**주요 사건:**\n")
+                    for event in chapter.get('key_events', []):
+                        f.write(f"- **{event.get('event_title', '')}**: {event.get('description', '')}\n")
+                    f.write("\n")
+                    
+                    f.write("**클라이맥스:**\n")
+                    f.write(f"{chapter.get('climax', '')}\n\n")
+                    
+                    f.write("**엔딩:**\n")
+                    f.write(f"{chapter.get('ending', '')}\n\n")
+                
+                # 스토리 분기
+                f.write("### 스토리 분기\n\n")
+                for branch in storyline.get('story_branches', {}).get('story_branches', []):
+                    f.write(f"#### {branch.get('branch_name', '')}\n")
+                    f.write(f"**트리거:** {branch.get('trigger', '')}\n")
+                    f.write(f"**시놉시스:** {branch.get('synopsis', '')}\n\n")
+                    
+                    f.write("**주요 사건:**\n")
+                    for event in branch.get('key_events', []):
+                        f.write(f"- {event}\n")
+                    f.write("\n")
+                    
+                    f.write("**결말:**\n")
+                    f.write(f"{branch.get('ending', '')}\n\n")
+                
+                # 샘플 대화 스크립트
+                if 'sample_dialogue' in storyline:
+                    dialogue = storyline.get('sample_dialogue', {})
+                    
+                    f.write("### 샘플 대화 스크립트\n\n")
+                    f.write(f"**씬:** {dialogue.get('scene_title', '')}\n")
+                    f.write(f"**배경:** {dialogue.get('scene_setting', '')}\n")
+                    f.write(f"**톤:** {dialogue.get('tone', '')}\n\n")
+                    
+                    f.write("**스크립트:**\n")
+                    for line in dialogue.get('script', []):
+                        speaker = line.get('speaker', '')
+                        text = line.get('line', '')
+                        emotion = line.get('emotion', '')
+                        action = line.get('action', '')
+                        
+                        if action:
+                            f.write(f"*{speaker} ({emotion})* [{action}]: {text}\n")
+                        else:
+                            f.write(f"*{speaker} ({emotion})*: {text}\n")
+                    f.write("\n")
+                    
+                    f.write("**플레이어 선택지:**\n")
+                    for option in dialogue.get('player_dialogue_options', []):
+                        f.write(f"- **선택:** {option.get('option_text', '')}\n")
+                        f.write(f"  **응답:** {option.get('response', '')}\n")
+                        f.write(f"  **결과:** {option.get('outcome', '')}\n")
+                    f.write("\n")
     
     def _create_pdf(self, game_design: Dict[str, Any], file_path: str) -> None:
         """
@@ -322,77 +453,44 @@ class DocumentGenerator:
             game_design: 게임 기획 정보
             file_path: 출력 파일 경로
         """
-        # 먼저 마크다운으로 변환
+        # 마크다운 생성을 통해 내용 확보
         temp_md_path = file_path.replace('.pdf', '_temp.md')
         self._create_markdown(game_design, temp_md_path)
         
-        # 마크다운을 HTML로 변환
+        # 마크다운 내용 PDF로 변환
         with open(temp_md_path, 'r', encoding='utf-8') as f:
             md_content = f.read()
         
-        html_content = markdown.markdown(md_content, extensions=['tables', 'fenced_code'])
+        # PDF 생성 라이브러리 사용
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import letter
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+        from reportlab.lib.units import inch
         
-        # PDF 생성
-        pdf = FPDF()
-        pdf.add_page()
-        pdf.set_auto_page_break(auto=True, margin=15)
+        # PDF 문서 생성
+        pdf = SimpleDocTemplate(file_path, pagesize=letter)
+        styles = getSampleStyleSheet()
+        story = []
         
-        # 폰트 설정 (기본 폰트는 한글을 지원하지 않으므로 주의)
-        pdf.add_font('NanumGothic', '', 'NanumGothic.ttf', uni=True)
-        pdf.set_font('NanumGothic', '', 12)
-        
-        # HTML을 PDF로 변환 (간단한 구현)
-        # 실제로는 HTML 파싱과 스타일링이 필요함
-        # 여기서는 단순화된 방식 사용
-        
-        # 제목
-        pdf.set_font('NanumGothic', '', 24)
-        pdf.cell(0, 10, game_design.get('game_title', '게임 기획서'), 0, 1, 'C')
-        pdf.ln(10)
-        
-        # 기본 내용
-        pdf.set_font('NanumGothic', '', 12)
-        
-        # 마크다운 내용을 라인별로 파싱하여 PDF에 추가
-        # (간단한 구현이므로 마크다운 문법은 부분적으로만 처리됨)
-        lines = md_content.split('\n')
-        for line in lines:
-            # 제목 처리
+        # 마크다운 내용을 PDF 문단으로 변환
+        for line in md_content.split('\n'):
             if line.startswith('# '):
-                pdf.set_font('NanumGothic', '', 20)
-                pdf.cell(0, 10, line[2:], 0, 1, 'L')
-                pdf.ln(5)
-                pdf.set_font('NanumGothic', '', 12)
+                story.append(Paragraph(line[2:], styles['Title']))
             elif line.startswith('## '):
-                pdf.set_font('NanumGothic', '', 18)
-                pdf.cell(0, 10, line[3:], 0, 1, 'L')
-                pdf.ln(5)
-                pdf.set_font('NanumGothic', '', 12)
+                story.append(Paragraph(line[3:], styles['Heading2']))
             elif line.startswith('### '):
-                pdf.set_font('NanumGothic', '', 16)
-                pdf.cell(0, 10, line[4:], 0, 1, 'L')
-                pdf.ln(5)
-                pdf.set_font('NanumGothic', '', 12)
-            elif line.startswith('#### '):
-                pdf.set_font('NanumGothic', '', 14)
-                pdf.cell(0, 10, line[5:], 0, 1, 'L')
-                pdf.ln(5)
-                pdf.set_font('NanumGothic', '', 12)
-            # 목록 처리
+                story.append(Paragraph(line[4:], styles['Heading3']))
             elif line.startswith('- '):
-                pdf.cell(10, 10, '•', 0, 0, 'L')
-                pdf.multi_cell(0, 10, line[2:], 0, 'L')
-            # 일반 텍스트
-            elif line.strip():
-                pdf.multi_cell(0, 10, line, 0, 'L')
-            # 빈 줄
+                story.append(Paragraph('• ' + line[2:], styles['BodyText']))
             else:
-                pdf.ln(5)
+                story.append(Paragraph(line, styles['BodyText']))
+            story.append(Spacer(1, 12))
         
-        # PDF 저장
-        pdf.output(file_path)
+        # PDF로 저장
+        pdf.build(story)
         
-        # 임시 파일 삭제
+        # 임시 마크다운 파일 삭제
         os.remove(temp_md_path)
     
     def _create_docx(self, game_design: Dict[str, Any], file_path: str) -> None:

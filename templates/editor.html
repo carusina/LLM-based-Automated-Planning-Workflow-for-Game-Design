@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>게임 기획서 편집</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.2/mode/markdown/markdown.min.js"></script>
+    <style>
+        body {
+            background-color: #f8f9fa;
+            padding-top: 20px;
+        }
+        .card {
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        .card-header {
+            background-color: #343a40;
+            color: white;
+            border-radius: 15px 15px 0 0 !important;
+            padding: 15px;
+        }
+        .btn-primary {
+            background-color: #4361ee;
+            border-color: #4361ee;
+        }
+        .btn-primary:hover {
+            background-color: #3a56d4;
+            border-color: #3a56d4;
+        }
+        #markdown-preview {
+            line-height: 1.6;
+            padding: 20px;
+            height: 500px;
+            overflow-y: auto;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+        }
+        .CodeMirror {
+            height: 500px;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+        }
+        #markdown-preview h1, #markdown-preview h2, #markdown-preview h3, 
+        #markdown-preview h4, #markdown-preview h5, #markdown-preview h6 {
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+        #markdown-preview h1 {
+            font-size: 2.25rem;
+            border-bottom: 2px solid #dee2e6;
+            padding-bottom: 0.5rem;
+        }
+        #markdown-preview h2 {
+            font-size: 1.75rem;
+            border-bottom: 1px solid #dee2e6;
+            padding-bottom: 0.5rem;
+        }
+        #markdown-preview h3 {
+            font-size: 1.5rem;
+        }
+        #markdown-preview h4 {
+            font-size: 1.25rem;
+        }
+        #markdown-preview ul, #markdown-preview ol {
+            margin-top: 0.5rem;
+            margin-bottom: 1rem;
+            padding-left: 2rem;
+        }
+        #markdown-preview p {
+            margin-bottom: 1rem;
+        }
+        #markdown-preview blockquote {
+            border-left: 4px solid #4361ee;
+            padding-left: 1rem;
+            color: #6c757d;
+            margin: 1rem 0;
+        }
+        #markdown-preview code {
+            background-color: #f1f1f1;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        }
+        #markdown-preview pre {
+            background-color: #f8f9fa;
+            padding: 1rem;
+            border-radius: 4px;
+            border: 1px solid #e9ecef;
+            overflow-x: auto;
+        }
+        #markdown-preview pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        #markdown-preview table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1rem;
+        }
+        #markdown-preview table th, #markdown-preview table td {
+            padding: 0.75rem;
+            border: 1px solid #dee2e6;
+        }
+        #markdown-preview table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        #markdown-preview img {
+            max-width: 100%;
+            height: auto;
+            margin: 1rem 0;
+        }
+        .toolbar {
+            position: sticky;
+            top: 0;
+            background-color: rgba(255, 255, 255, 0.9);
+            z-index: 1000;
+            border-bottom: 1px solid #dee2e6;
+            margin-bottom: 20px;
+            padding: 10px;
+        }
+        .offcanvas-body {
+            padding: 1rem;
+        }
+        .chapter-list {
+            list-style: none;
+            padding: 0;
+        }
+        .chapter-list li {
+            padding: 8px 16px;
+            border-bottom: 1px solid #dee2e6;
+            cursor: pointer;
+        }
+        .chapter-list li:hover {
+            background-color: #f8f9fa;
+        }
+        .chapter-list li.active {
+            background-color: #e9ecef;
+            font-weight: bold;
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        .loading-spinner {
+            width: 3rem;
+            height: 3rem;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="spinner-border text-light loading-spinner" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="toolbar">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1>게임 기획서 편집</h1>
+                <div>
+                    <a href="/view/{{ full_filename }}" class="btn btn-outline-secondary me-2">
+                        <i class="bi bi-eye"></i> 보기
+                    </a>
+                    <a href="/" class="btn btn-outline-secondary me-2">
+                        <i class="bi bi-arrow-left"></i> 홈으로
+                    </a>
+                    <button type="button" class="btn btn-primary" id="saveBtn">
+                        <i class="bi bi-save"></i> 저장
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-lg-9">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h2 id="docTitle">{{ filename }}</h2>
+                        <div>
+                            <button class="btn btn-outline-light" data-bs-toggle="offcanvas" data-bs-target="#chapterSidebar">
+                                <i class="bi bi-list-ul"></i> 챕터 관리
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <ul class="nav nav-tabs" id="editorTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="edit-tab" data-bs-toggle="tab" data-bs-target="#edit-pane" type="button" role="tab" aria-controls="edit-pane" aria-selected="true">편집</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="preview-tab" data-bs-toggle="tab" data-bs-target="#preview-pane" type="button" role="tab" aria-controls="preview-pane" aria-selected="false">미리보기</button>
+                            </li>
+                        </ul>
+                        <div class="tab-content" id="editorTabsContent">
+                            <div class="tab-pane fade show active" id="edit-pane" role="tabpanel" aria-labelledby="edit-tab">
+                                <textarea id="markdown-editor" class="form-control mt-3"></textarea>
+                            </div>
+                            <div class="tab-pane fade" id="preview-pane" role="tabpanel" aria-labelledby="preview-tab">
+                                <div id="markdown-preview" class="mt-3"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-3">
+                <div class="card">
+                    <div class="card-header">
+                        <h3>챕터 편집</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="mb-3">
+                            <label for="chapterNumberInput" class="form-label">챕터 번호</label>
+                            <input type="number" class="form-control" id="chapterNumberInput" value="1" min="1">
+                        </div>
+                        <div class="mb-3">
+                            <label for="chapterTitleInput" class="form-label">챕터 제목</label>
+                            <input type="text" class="form-control" id="chapterTitleInput" placeholder="제목 입력...">
+                        </div>
+                        <div class="mb-3">
+                            <label for="chapterGuidelineInput" class="form-label">가이드라인 (선택사항)</label>
+                            <textarea class="form-control" id="chapterGuidelineInput" rows="3" placeholder="AI에게 전달할 지침이나 참고사항..."></textarea>
+                        </div>
+                        <div class="d-grid gap-2">
+                            <button class="btn btn-primary" id="getSuggestionBtn">
+                                <i class="bi bi-lightbulb"></i> GraphRAG 기반 추천 받기
+                            </button>
+                            <button class="btn btn-success" id="applyChapterBtn">
+                                <i class="bi bi-check-lg"></i> 챕터 내용 적용
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 챕터 관리 사이드바 -->
+    <div class="offcanvas offcanvas-end" tabindex="-1" id="chapterSidebar" aria-labelledby="chapterSidebarLabel">
+        <div class="offcanvas-header">
+            <h5 class="offcanvas-title" id="chapterSidebarLabel">챕터 관리</h5>
+            <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+        </div>
+        <div class="offcanvas-body">
+            <div class="mb-3">
+                <button class="btn btn-success w-100" id="extractChaptersBtn">
+                    <i class="bi bi-list-check"></i> 챕터 목록 추출
+                </button>
+            </div>
+            <hr>
+            <h6>챕터 목록</h6>
+            <ul class="chapter-list" id="chapterList">
+                <!-- 자바스크립트로 동적 생성 -->
+            </ul>
+        </div>
+    </div>
+
+    <!-- 내용 저장 확인 모달 -->
+    <div class="modal fade" id="saveConfirmModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">저장 확인</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>변경사항을 저장하시겠습니까?</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                    <button type="button" class="btn btn-primary" id="confirmSaveBtn">저장</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 챕터 추천 내용 모달 -->
+    <div class="modal fade" id="suggestionModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">챕터 내용 추천</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="suggestionContent" class="border p-3 bg-light" style="max-height: 400px; overflow-y: auto;"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                    <button type="button" class="btn btn-primary" id="useSuggestionBtn">이 내용 사용하기</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 마크다운 에디터 초기화
+            const markdownEditor = CodeMirror.fromTextArea(document.getElementById('markdown-editor'), {
+                mode: 'markdown',
+                lineNumbers: true,
+                lineWrapping: true,
+                theme: 'default',
+                extraKeys: {"Enter": "newlineAndIndentContinueMarkdownList"}
+            });
+            
+            // 초기 내용 설정
+            const initialContent = `{{ content | safe }}`;
+            markdownEditor.setValue(initialContent);
+            
+            // 페이지 제목 설정 - 마크다운 첫 번째 h1 태그가 있다면 사용
+            const h1Match = initialContent.match(/^# ([^\n]+)/);
+            if (h1Match) {
+                document.getElementById('docTitle').textContent = h1Match[1];
+                document.title = h1Match[1] + " - 게임 기획서 편집";
+            }
+            
+            // 미리보기 탭 클릭 시 업데이트
+            document.getElementById('preview-tab').addEventListener('click', function() {
+                const content = markdownEditor.getValue();
+                document.getElementById('markdown-preview').innerHTML = marked.parse(content);
+            });
+            
+            // 글로벌 변수 - 추출된 챕터 정보
+            let extractedChapters = [];
+            let selectedChapterContent = '';
+            
+            // 로딩 오버레이 표시/숨기기 함수
+            function showLoading() {
+                document.getElementById('loading-overlay').style.display = 'flex';
+            }
+            
+            function hideLoading() {
+                document.getElementById('loading-overlay').style.display = 'none';
+            }
+            
+            // 챕터 목록 추출 버튼 클릭 이벤트
+            document.getElementById('extractChaptersBtn').addEventListener('click', function() {
+                const content = markdownEditor.getValue();
+                
+                // 챕터 정보 추출 (정규식)
+                const chapterPattern = /#### 챕터 (\d+): ([^\n]+)([\s\S]*?)(?=#### 챕터|### |## |$)/g;
+                
+                let chaptersHtml = '';
+                extractedChapters = [];
+                let match;
+                
+                while ((match = chapterPattern.exec(content)) !== null) {
+                    const chapterNumber = match[1];
+                    const chapterTitle = match[2];
+                    const chapterContent = match[3].trim();
+                    
+                    extractedChapters.push({
+                        number: parseInt(chapterNumber),
+                        title: chapterTitle,
+                        content: chapterContent
+                    });
+                    
+                    chaptersHtml += `<li data-chapter="${chapterNumber}" class="chapter-item">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span>챕터 ${chapterNumber}: ${chapterTitle}</span>
+                            <button class="btn btn-sm btn-outline-danger delete-chapter-btn" data-chapter="${chapterNumber}">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </li>`;
+                }
+                
+                // 챕터가 없을 경우
+                if (extractedChapters.length === 0) {
+                    chaptersHtml = '<li class="text-muted">추출된 챕터가 없습니다</li>';
+                }
+                
+                // 챕터 목록 업데이트
+                document.getElementById('chapterList').innerHTML = chaptersHtml;
+                
+                // 챕터 클릭 이벤트 추가
+                document.querySelectorAll('.chapter-item').forEach(item => {
+                    item.addEventListener('click', function() {
+                        const chapterNumber = this.dataset.chapter;
+                        const chapterData = extractedChapters.find(ch => ch.number === parseInt(chapterNumber));
+                        
+                        if (chapterData) {
+                            // 폼에 챕터 정보 표시
+                            document.getElementById('chapterNumberInput').value = chapterData.number;
+                            document.getElementById('chapterTitleInput').value = chapterData.title;
+                            
+                            // 현재 선택된 챕터 내용 저장
+                            selectedChapterContent = chapterData.content;
+                            
+                            // 사이드바 닫기
+                            const offcanvasElement = document.getElementById('chapterSidebar');
+                            const offcanvas = bootstrap.Offcanvas.getInstance(offcanvasElement);
+                            offcanvas.hide();
+                        }
+                    });
+                });
+                
+                // 챕터 삭제 버튼 이벤트
+                document.querySelectorAll('.delete-chapter-btn').forEach(btn => {
+                    btn.addEventListener('click', function(e) {
+                        e.stopPropagation(); // 버블링 방지
+                        const chapterNumber = this.dataset.chapter;
+                        
+                        if (confirm(`챕터 ${chapterNumber}을(를) 삭제하시겠습니까?`)) {
+                            // API 호출하여 챕터 삭제
+                            deleteChapter(chapterNumber);
+                        }
+                    });
+                });
+            });
+            
+            // 챕터 삭제 함수
+            function deleteChapter(chapterNumber) {
+                showLoading();
+                
+                fetch('/api/chapter/delete', {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        filename: '{{ full_filename }}',
+                        chapter_number: parseInt(chapterNumber)
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message);
+                        
+                        // 삭제된 챕터를 에디터에서도 제거
+                        const content = markdownEditor.getValue();
+                        const chapterPattern = new RegExp(`#### 챕터 ${chapterNumber}: [^\\n]+[\\s\\S]*?(?=#### 챕터|### |## |$)`, 'g');
+                        const updatedContent = content.replace(chapterPattern, '');
+                        
+                        // 연속된 줄바꿈 정리
+                        const cleanedContent = updatedContent.replace(/\n{3,}/g, '\n\n');
+                        markdownEditor.setValue(cleanedContent);
+                        
+                        // 챕터 목록 다시 추출
+                        document.getElementById('extractChaptersBtn').click();
+                    } else {
+                        alert('오류: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('챕터 삭제 중 오류:', error);
+                    alert('챕터 삭제 중 오류가 발생했습니다.');
+                })
+                .finally(() => {
+                    hideLoading();
+                });
+            }
+            
+            // 추천 내용 받기 버튼 클릭 이벤트
+            document.getElementById('getSuggestionBtn').addEventListener('click', function() {
+                const chapterNumber = parseInt(document.getElementById('chapterNumberInput').value);
+                const chapterTitle = document.getElementById('chapterTitleInput').value;
+                const guideline = document.getElementById('chapterGuidelineInput').value;
+                
+                if (!chapterNumber || !chapterTitle) {
+                    alert('챕터 번호와 제목을 입력해주세요.');
+                    return;
+                }
+                
+                showLoading();
+                
+                // API 호출하여 추천 내용 받기
+                fetch('/api/chapter/suggest', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        filename: '{{ full_filename }}',
+                        chapter_number: chapterNumber,
+                        chapter_title: chapterTitle,
+                        guideline: guideline
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // 추천 내용을 모달에 표시
+                        document.getElementById('suggestionContent').innerHTML = marked.parse(data.suggested_content);
+                        
+                        // 추천 내용 저장 (원본 마크다운)
+                        selectedChapterContent = data.suggested_content;
+                        
+                        // 디버그용 로깅
+                        console.log('수신된 추천 내용:', data.suggested_content);
+                        
+                        // 모달 표시
+                        const suggestionModal = new bootstrap.Modal(document.getElementById('suggestionModal'));
+                        suggestionModal.show();
+                    } else {
+                        alert('오류: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('추천 내용 받기 중 오류:', error);
+                    alert('추천 내용을 받는 중 오류가 발생했습니다.');
+                })
+                .finally(() => {
+                    hideLoading();
+                });
+            });
+            
+            // 추천 내용 사용하기 버튼 클릭 이벤트
+            document.getElementById('useSuggestionBtn').addEventListener('click', function() {
+                // 가져온 추천 내용을 그대로 사용 (이미 selectedChapterContent에 저장되어 있음)
+                console.log('사용할 챕터 내용:', selectedChapterContent);
+                
+                // 모달 닫기 후 내용 적용
+                const suggestionModal = bootstrap.Modal.getInstance(document.getElementById('suggestionModal'));
+                suggestionModal.hide();
+                
+                // 챕터 적용
+                document.getElementById('applyChapterBtn').click();
+            });
+            
+            // 챕터 내용 적용 버튼 클릭 이벤트
+            document.getElementById('applyChapterBtn').addEventListener('click', function() {
+                const chapterNumber = parseInt(document.getElementById('chapterNumberInput').value);
+                const chapterTitle = document.getElementById('chapterTitleInput').value;
+                
+                if (!chapterNumber || !chapterTitle) {
+                    alert('챕터 번호와 제목을 입력해주세요.');
+                    return;
+                }
+                
+                // 선택된 챕터 내용이 없으면 경고
+                if (!selectedChapterContent) {
+                    alert('챕터 내용이 없습니다. GraphRAG 기반 추천을 받아보세요.');
+                    return;
+                }
+                
+                // 현재 에디터 내용
+                const content = markdownEditor.getValue();
+                
+                // 해당 챕터가 이미 있는지 확인
+                const chapterPattern = new RegExp(`#### 챕터 ${chapterNumber}: [^\\n]+[\\s\\S]*?(?=#### 챕터|### |## |$)`, 'g');
+                const chapterExists = chapterPattern.test(content);
+                
+                // 챕터 내용 생성 (줄바꾸기 포함)
+                const chapterContent = `#### 챕터 ${chapterNumber}: ${chapterTitle}\n${selectedChapterContent}`;
+                
+                console.log('적용할 챕터 내용:', chapterContent);
+                
+                let updatedContent;
+                
+                if (chapterExists) {
+                    // 기존 챕터 내용 업데이트
+                    updatedContent = content.replace(chapterPattern, chapterContent);
+                } else {
+                    // 스토리라인 섹션 찾기
+                    const storylinePattern = /## 스토리라인[\s\S]*?(?=## |$)/;
+                    const storylineMatch = content.match(storylinePattern);
+                    
+                    if (storylineMatch) {
+                        // 챕터 개요 섹션 찾기
+                        const chapterOutlinePattern = /### 챕터 개요[\s\S]*?(?=### |## |$)/;
+                        const chapterOutlineMatch = storylineMatch[0].match(chapterOutlinePattern);
+                        
+                        if (chapterOutlineMatch) {
+                            // 챕터 개요 섹션 내에서 적절한 위치를 찾아 새 챕터 추가
+                            let chapterOutlineContent = chapterOutlineMatch[0];
+                            let chapterContents = "";
+                            
+                            // 현재 존재하는 모든 챕터 추출
+                            const allChaptersPattern = /#### 챕터 (\d+): ([^\n]+)[\s\S]*?(?=#### 챕터|### |## |$)/g;
+                            const existingChapters = [];
+                            let chapterMatch;
+                            
+                            while ((chapterMatch = allChaptersPattern.exec(chapterOutlineContent)) !== null) {
+                                existingChapters.push({
+                                    number: parseInt(chapterMatch[1]),
+                                    title: chapterMatch[2],
+                                    fullMatch: chapterMatch[0],
+                                    index: chapterMatch.index
+                                });
+                            }
+                            
+                            // 챕터를 번호 순으로 정렬
+                            existingChapters.sort((a, b) => a.number - b.number);
+                            
+                            // 새 챕터 삽입 위치 결정
+                            if (existingChapters.length === 0) {
+                                // 챕터가 없으면 섹션 끝에 추가
+                                const updatedOutline = chapterOutlineContent + '\n\n' + chapterContent;
+                                updatedContent = content.replace(chapterOutlineContent, updatedOutline);
+                            } else {
+                                // 챕터가 이미 있는 경우, 번호 순서대로 삽입
+                                let insertAfterChapter = null;
+                                let insertBeforeChapter = null;
+                                
+                                // 삽입할 위치 찾기
+                                for (let i = 0; i < existingChapters.length; i++) {
+                                    if (existingChapters[i].number < chapterNumber) {
+                                        insertAfterChapter = existingChapters[i];
+                                    } else if (existingChapters[i].number > chapterNumber && !insertBeforeChapter) {
+                                        insertBeforeChapter = existingChapters[i];
+                                        break;
+                                    }
+                                }
+                                
+                                // 삽입 위치에 따라 처리
+                                if (insertAfterChapter === null) {
+                                    // 가장 앞에 삽입
+                                    const headerPattern = /### 챕터 개요\s*\n/;
+                                    const headerMatch = chapterOutlineContent.match(headerPattern);
+                                    
+                                    if (headerMatch) {
+                                        const updatedOutline = chapterOutlineContent.replace(
+                                            headerMatch[0],
+                                            headerMatch[0] + chapterContent + '\n\n'
+                                        );
+                                        updatedContent = content.replace(chapterOutlineContent, updatedOutline);
+                                    } else {
+                                        // 헤더가 없는 경우는 처리하지 않음 (이미 앞에서 체크함)
+                                        updatedContent = content;
+                                    }
+                                } else if (insertBeforeChapter === null) {
+                                    // 가장 뒤에 삽입
+                                    const updatedOutline = chapterOutlineContent + '\n\n' + chapterContent;
+                                    updatedContent = content.replace(chapterOutlineContent, updatedOutline);
+                                } else {
+                                    // 중간에 삽입
+                                    const updatedOutline = chapterOutlineContent.replace(
+                                        insertBeforeChapter.fullMatch,
+                                        chapterContent + '\n\n' + insertBeforeChapter.fullMatch
+                                    );
+                                    updatedContent = content.replace(chapterOutlineContent, updatedOutline);
+                                }
+                            }
+                        } else {
+                            // 챕터 개요 섹션이 없으면 스토리라인 섹션에 챕터 개요 추가
+                            const updatedStoryline = storylineMatch[0] + '\n\n### 챕터 개요\n\n' + chapterContent;
+                            updatedContent = content.replace(storylineMatch[0], updatedStoryline);
+                        }
+                    } else {
+                        // 스토리라인 섹션이 없으면 문서 끝에 추가
+                        updatedContent = content + '\n\n## 스토리라인\n\n### 챕터 개요\n\n' + chapterContent;
+                    }
+                }
+                
+                // 에디터 내용 업데이트
+                markdownEditor.setValue(updatedContent);
+                
+                // API 호출하여 챕터 저장
+                saveChapter(chapterNumber, chapterTitle, selectedChapterContent);
+                
+                // 추출된 챕터 목록 다시 갱신
+                setTimeout(() => {
+                    document.getElementById('extractChaptersBtn').click();
+                }, 1000);
+            });
+            
+            // 챕터 저장 함수
+            function saveChapter(chapterNumber, chapterTitle, chapterContent) {
+                showLoading();
+                
+                console.log('저장할 챕터 내용:', chapterContent);
+                
+                fetch('/api/chapter/update', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        filename: '{{ full_filename }}',
+                        chapter_number: chapterNumber,
+                        chapter_title: chapterTitle,
+                        content: chapterContent
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert(data.message);
+                    } else {
+                        alert('오류: ' + data.error);
+                    }
+                })
+                .catch(error => {
+                    console.error('챕터 저장 중 오류:', error);
+                    alert('챕터 저장 중 오류가 발생했습니다.');
+                })
+                .finally(() => {
+                    hideLoading();
+                });
+            }
+            
+            // 저장 버튼 클릭 이벤트
+            document.getElementById('saveBtn').addEventListener('click', function() {
+                const saveModal = new bootstrap.Modal(document.getElementById('saveConfirmModal'));
+                saveModal.show();
+            });
+            
+            // 저장 확인 버튼 클릭 이벤트
+            document.getElementById('confirmSaveBtn').addEventListener('click', function() {
+                saveDocument();
+            });
+            
+            // 문서 저장 함수
+            function saveDocument() {
+                showLoading();
+                
+                const content = markdownEditor.getValue();
+                
+                // 문서 저장을 위한 API 호출
+                fetch('/save_document', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    body: new URLSearchParams({
+                        'content': content,
+                        'filename': '{{ full_filename }}'
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('문서가 저장되었습니다.');
+                    } else {
+                        throw new Error(data.error || '문서 저장 중 오류가 발생했습니다.');
+                    }
+                })
+                .catch(error => {
+                    console.error('문서 저장 중 오류:', error);
+                    alert('문서 저장 중 오류가 발생했습니다.');
+                })
+                .finally(() => {
+                    hideLoading();
+                    const saveModal = bootstrap.Modal.getInstance(document.getElementById('saveConfirmModal'));
+                    saveModal.hide();
+                });
+            }
+            
+            // 초기 로드 시 챕터 목록 추출
+            document.getElementById('extractChaptersBtn').click();
+        });
+    </script>
+</body>
+</html>

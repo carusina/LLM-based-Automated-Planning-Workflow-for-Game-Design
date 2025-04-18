@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>게임 기획서 보기</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        body {
+            background-color: #f8f9fa;
+            padding-top: 20px;
+        }
+        .card {
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        .card-header {
+            background-color: #343a40;
+            color: white;
+            border-radius: 15px 15px 0 0 !important;
+            padding: 15px;
+        }
+        .btn-primary {
+            background-color: #4361ee;
+            border-color: #4361ee;
+        }
+        .btn-primary:hover {
+            background-color: #3a56d4;
+            border-color: #3a56d4;
+        }
+        #markdownContent {
+            line-height: 1.6;
+            padding: 20px;
+        }
+        #markdownContent h1, #markdownContent h2, #markdownContent h3, 
+        #markdownContent h4, #markdownContent h5, #markdownContent h6 {
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
+            font-weight: 600;
+        }
+        #markdownContent h1 {
+            font-size: 2.25rem;
+            border-bottom: 2px solid #dee2e6;
+            padding-bottom: 0.5rem;
+        }
+        #markdownContent h2 {
+            font-size: 1.75rem;
+            border-bottom: 1px solid #dee2e6;
+            padding-bottom: 0.5rem;
+        }
+        #markdownContent h3 {
+            font-size: 1.5rem;
+        }
+        #markdownContent h4 {
+            font-size: 1.25rem;
+        }
+        #markdownContent ul, #markdownContent ol {
+            margin-top: 0.5rem;
+            margin-bottom: 1rem;
+            padding-left: 2rem;
+        }
+        #markdownContent p {
+            margin-bottom: 1rem;
+        }
+        #markdownContent blockquote {
+            border-left: 4px solid #4361ee;
+            padding-left: 1rem;
+            color: #6c757d;
+            margin: 1rem 0;
+        }
+        #markdownContent code {
+            background-color: #f1f1f1;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        }
+        #markdownContent pre {
+            background-color: #f8f9fa;
+            padding: 1rem;
+            border-radius: 4px;
+            border: 1px solid #e9ecef;
+            overflow-x: auto;
+        }
+        #markdownContent pre code {
+            background-color: transparent;
+            padding: 0;
+        }
+        #markdownContent table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1rem;
+        }
+        #markdownContent table th, #markdownContent table td {
+            padding: 0.75rem;
+            border: 1px solid #dee2e6;
+        }
+        #markdownContent table th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        #markdownContent img {
+            max-width: 100%;
+            height: auto;
+            margin: 1rem 0;
+        }
+        .toolbar {
+            position: sticky;
+            top: 0;
+            background-color: rgba(255, 255, 255, 0.9);
+            z-index: 1000;
+            border-bottom: 1px solid #dee2e6;
+            margin-bottom: 20px;
+            padding: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="toolbar">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1>게임 기획서 보기</h1>
+                <div>
+                    <a href="/" class="btn btn-outline-secondary me-2">
+                        <i class="bi bi-arrow-left"></i> 홈으로
+                    </a>
+                    <a href="/edit/{{ full_filename }}" class="btn btn-primary">
+                        <i class="bi bi-pencil"></i> 편집하기
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h2 id="docTitle">{{ filename }}</h2>
+                <div>
+                    <button id="downloadBtn" class="btn btn-outline-light">
+                        <i class="bi bi-download"></i> 다운로드
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="markdownContent"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 다운로드 형식 선택 모달 -->
+    <div class="modal fade" id="downloadModal" tabindex="-1" aria-labelledby="downloadModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="downloadModalLabel">다운로드 형식 선택</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="radio" name="downloadFormat" id="markdownFormat" value="markdown" checked>
+                        <label class="form-check-label" for="markdownFormat">
+                            마크다운 (.md)
+                        </label>
+                        <small class="d-block text-muted">가볍고 편집하기 쉬운 텍스트 형식</small>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="radio" name="downloadFormat" id="docxFormat" value="docx">
+                        <label class="form-check-label" for="docxFormat">
+                            워드 문서 (.docx)
+                        </label>
+                        <small class="d-block text-muted">Microsoft Word에서 열 수 있는 형식</small>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="radio" name="downloadFormat" id="pdfFormat" value="pdf">
+                        <label class="form-check-label" for="pdfFormat">
+                            PDF (.pdf)
+                        </label>
+                        <small class="d-block text-muted">모든 환경에서 동일하게 표시되는 형식</small>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button>
+                    <button type="button" class="btn btn-primary" id="confirmDownloadBtn">다운로드</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // 마크다운 컨텐츠를 HTML로 변환
+            const markdownContent = `{{ content | safe }}`;
+            document.getElementById('markdownContent').innerHTML = marked.parse(markdownContent);
+            
+            // 페이지 제목 설정 - 마크다운 첫 번째 h1 태그가 있다면 사용
+            const h1Match = markdownContent.match(/^# ([^\n]+)/);
+            if (h1Match) {
+                document.getElementById('docTitle').textContent = h1Match[1];
+                document.title = h1Match[1] + " - 게임 기획서 보기";
+            }
+            
+            // 다운로드 버튼
+            const downloadBtn = document.getElementById('downloadBtn');
+            const confirmDownloadBtn = document.getElementById('confirmDownloadBtn');
+            const downloadModal = new bootstrap.Modal(document.getElementById('downloadModal'));
+            
+            downloadBtn.addEventListener('click', function() {
+                downloadModal.show();
+            });
+            
+            confirmDownloadBtn.addEventListener('click', function() {
+                // 게임 기획 데이터 구성
+                const format = document.querySelector('input[name="downloadFormat"]:checked').value;
+                
+                // 다운로드 버튼 비활성화 및 로딩 상태 표시
+                confirmDownloadBtn.disabled = true;
+                confirmDownloadBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> 다운로드 중...';
+                
+                // Markdown 직접 다운로드
+                if (format === 'markdown') {
+                    const blob = new Blob([markdownContent], { type: 'text/markdown' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = '{{ filename }}.md';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    
+                    // 모달 닫기
+                    downloadModal.hide();
+                    confirmDownloadBtn.disabled = false;
+                    confirmDownloadBtn.textContent = '다운로드';
+                    return;
+                }
+                
+                // 서버 API를 통한 다운로드 요청
+                fetch('/download', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        current_design: { game_title: '{{ filename }}' },
+                        format: format
+                    })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(data => {
+                            throw new Error(data.error || '다운로드 중 오류가 발생했습니다.');
+                        });
+                    }
+                    return response.blob();
+                })
+                .then(blob => {
+                    // 파일 확장자 결정
+                    let extension = format;
+                    if (format === 'markdown') extension = 'md';
+                    
+                    // 파일 다운로드
+                    const fileName = `{{ filename }}_게임기획서.${extension}`;
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = url;
+                    a.download = fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                })
+                .catch(error => {
+                    console.error('다운로드 오류:', error);
+                    alert(`파일 다운로드 중 오류가 발생했습니다: ${error.message}`);
+                })
+                .finally(() => {
+                    // 다운로드 버튼 원래 상태로 복원
+                    confirmDownloadBtn.disabled = false;
+                    confirmDownloadBtn.textContent = '다운로드';
+                    
+                    // 모달 닫기
+                    downloadModal.hide();
+                });
+            });
+        });
+    </script>
+</body>
+</html>

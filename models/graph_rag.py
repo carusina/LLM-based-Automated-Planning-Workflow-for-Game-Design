@@ -17,7 +17,7 @@ class GraphRAG:
         self.llm_service = llm_service
         self.kg_service = knowledge_graph_service
     
-    def generate_chapter_content(self, game_title, chapter_number, chapter_title="", guideline=""):
+    def generate_chapter_content(self, game_title, chapter_number, chapter_title="", guideline="", include_details=True):
         """
         챕터 내용을 생성합니다.
         
@@ -26,6 +26,7 @@ class GraphRAG:
             chapter_number: 챕터 번호
             chapter_title: 챕터 제목 (없으면 빈 문자열)
             guideline: 사용자가 입력한 가이드라인
+            include_details: 챕터 상세 내용 포함 여부 (기본값: True)
             
         Returns:
             생성된 챕터 내용
@@ -124,100 +125,132 @@ class GraphRAG:
         if guideline:
             prompt += f"\n## 사용자 가이드라인\n{guideline}\n"
         
-        # 생성 요청 형식
+        # 출력 스키마 정의 (챕터 개요)
+        chapter_outline_schema = {
+            "chapter_number": chapter_number,
+            "title": chapter_title,
+            "synopsis": "챕터 개요",
+            "goals": ["플레이어 목표 1", "플레이어 목표 2"],
+            "key_locations": ["주요 위치 1", "주요 위치 2"],
+            "key_events": ["주요 사건 1", "주요 사건 2"],
+            "challenges": ["도전 1", "도전 2"]
+        }
+        
+        # 출력 스키마 정의 (챕터 상세 내용)
+        chapter_details_schema = {
+            "chapter_number": chapter_number,
+            "title": chapter_title,
+            "detailed_synopsis": "상세 시놉시스",
+            "opening_scene": "오프닝 씬 설명",
+            "key_events": [
+                {
+                    "event_title": "이벤트 제목",
+                    "description": "이벤트 설명",
+                    "player_involvement": "플레이어 관여 방식",
+                    "gameplay_mechanics": ["관련 게임플레이 메커닉 1", "관련 게임플레이 메커닉 2"],
+                    "outcomes": ["가능한 결과 1", "가능한 결과 2"]
+                }
+            ],
+            "characters": [
+                {
+                    "name": "캐릭터 이름",
+                    "role": "이 챕터에서의 역할",
+                    "interactions": "플레이어와의 상호작용",
+                    "development": "캐릭터 발전/변화"
+                }
+            ],
+            "locations": [
+                {
+                    "name": "장소 이름",
+                    "description": "장소 설명",
+                    "significance": "스토리에서의 중요성",
+                    "gameplay_elements": ["게임플레이 요소 1", "게임플레이 요소 2"]
+                }
+            ],
+            "challenges": [
+                {
+                    "challenge_type": "도전 유형 (전투, 퍼즐, 선택 등)",
+                    "description": "도전 설명",
+                    "difficulty": "난이도",
+                    "rewards": ["보상 1", "보상 2"]
+                }
+            ],
+            "choices_and_consequences": [
+                {
+                    "choice_point": "선택 지점",
+                    "options": ["선택지 1", "선택지 2"],
+                    "consequences": ["결과 1", "결과 2"]
+                }
+            ],
+            "climax": "챕터 클라이맥스 설명",
+            "ending": "챕터 엔딩 설명",
+            "connection_to_next_chapter": "다음 챕터와의 연결",
+            "key_items": ["주요 아이템 1", "주요 아이템 2"],
+            "secrets": ["숨겨진 비밀/이스터에그 1", "숨겨진 비밀/이스터에그 2"]
+        }
+        
+        # 생성 요청 추가
         prompt += """
         ## 요청
-        이 챕터에 대한 다음 정보를 마크다운 형식으로 생성해주세요:
-        1. 챕터에 대한 간략한 설명 (1-2 문장)
-        2. 목표 (2-4개 항목) - 글머리 기호로 나열
-        3. 주요 위치 (2-3개 항목) - 글머리 기호로 나열
-        4. 주요 사건 (3-5개 항목) - 글머리 기호로 나열
-        5. 도전 과제 (2-3개 항목) - 글머리 기호로 나열
-        
-        다음 형식을 사용해주세요:
-
-        (챕터에 대한 간략한 설명)
-        
-        **목표:**
-        - (목표 1)
-        - (목표 2)
-        ...
-        
-        **주요 위치:**
-        - (위치 1)
-        - (위치 2)
-        ...
-        
-        **주요 사건:**
-        - (사건 1)
-        - (사건 2)
-        ...
-        
-        **도전 과제:**
-        - (도전 과제 1)
-        - (도전 과제 2)
-        ...
+        사용자 가이드라인을 필수적으로 반영해주세요.
         """
         
         # 3. LLM으로 내용 생성
         try:
-            generated_content = self.llm_service.generate_text(
-                prompt=prompt,
-                provider="openai",
-                temperature=0.7,
-                max_tokens=1500
-            )
-            
-            # 필요하면 형식을 정리 (마크다운 형식이 아닌 부분 제거)
-            return self._clean_generated_content(generated_content)
+            if not include_details:
+                # 챕터 개요만 생성
+                return self.llm_service.generate_structured_output(
+                    prompt=prompt,
+                    output_schema=chapter_outline_schema,
+                    provider="openai",
+                    temperature=0.7
+                )
+            else:
+                # 챕터 상세 내용 생성
+                return self.llm_service.generate_structured_output(
+                    prompt=prompt,
+                    output_schema=chapter_details_schema,
+                    provider="openai",
+                    temperature=0.7
+                )
             
         except Exception as e:
             print(f"챕터 내용 생성 중 오류 발생: {str(e)}")
-            return f"내용 생성 중 오류가 발생했습니다: {str(e)}"
-    
-    def _clean_generated_content(self, content):
+            return {"error": f"내용 생성 중 오류가 발생했습니다: {str(e)}"}
+
+    def generate_complete_chapter(self, game_title, chapter_number, chapter_title="", guideline=""):
         """
-        생성된 내용을 정리합니다.
+        챕터의 개요와 상세 내용을 모두 생성합니다.
         
         Args:
-            content: 생성된 텍스트
+            game_title: 게임 제목
+            chapter_number: 챕터 번호
+            chapter_title: 챕터 제목 (없으면 빈 문자열)
+            guideline: 사용자가 입력한 가이드라인
             
         Returns:
-            정리된 텍스트
+            개요와 상세 내용을 포함한 딕셔너리
         """
-        # '(챕터에 대한 간략한 설명)' 같은 안내 구문 제거
-        content = re.sub(r'\(([^)]*)\)', r'\1', content)
+        # 챕터 개요 생성
+        chapter_outline = self.generate_chapter_content(
+            game_title=game_title,
+            chapter_number=chapter_number,
+            chapter_title=chapter_title,
+            guideline=guideline,
+            include_details=False
+        )
         
-        # 불필요한 마크다운 헤더 제거 (###, ## 등)
-        content = re.sub(r'^#{1,6}\s+.*$', '', content, flags=re.MULTILINE)
+        # 챕터 상세 내용 생성
+        chapter_details = self.generate_chapter_content(
+            game_title=game_title,
+            chapter_number=chapter_number,
+            chapter_title=chapter_title,
+            guideline=guideline,
+            include_details=True
+        )
         
-        # 양식에 맞게 정리
-        content = content.strip()
-        
-        # 내용에 줄바꿈 추가 (단락 구분을 위해)
-        content_parts = content.split('**목표:**')
-        if len(content_parts) > 1:
-            description = content_parts[0].strip()
-            rest_content = '**목표:**' + content_parts[1]
-            content = description + '\n\n' + rest_content
-            
-        # 각 섹션 사이에 빈 줄 추가
-        for section in ["**목표:**", "**주요 위치:**", "**주요 사건:**", "**도전 과제:**"]:
-            if section in content:
-                content = content.replace(section, '\n' + section)
-        
-        # 필수 섹션 확인하고 없으면 추가
-        required_sections = ["**목표:**", "**주요 위치:**", "**주요 사건:**", "**도전 과제:**"]
-        
-        for section in required_sections:
-            if section not in content:
-                # 섹션에 해당하는 글머리 기호 리스트 찾기
-                list_items = re.findall(r'- .*?\n', content)
-                if list_items:
-                    # 목록 앞에 섹션 추가
-                    content = content.replace(list_items[0], f"{section}\n{list_items[0]}")
-        
-        # 줄바꿈 정리 (연속된 빈 줄 제거)
-        content = re.sub(r'\n{3,}', '\n\n', content)
-        
-        return content
+        # 필요한 정보만 반환
+        return {
+            "outline": chapter_outline,  # 챕터 개요
+            "details": chapter_details   # 챕터 상세 내용
+        }

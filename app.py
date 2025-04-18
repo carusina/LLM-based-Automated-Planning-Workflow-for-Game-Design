@@ -143,13 +143,19 @@ def update_chapter():
     """챕터 내용 업데이트 API 엔드포인트"""
     data = request.json
     
-    if not data or 'filename' not in data or 'chapter_number' not in data or 'content' not in data:
+    print(f"[API 디버그] 챕터 업데이트 요청 데이터: {data.keys()}")
+    
+    if not data or 'filename' not in data or 'chapter_number' not in data:
         return jsonify({'error': '필수 매개변수가 누락되었습니다.'}), 400
     
     filename = data['filename']
     chapter_number = data['chapter_number']
-    new_content = data['content']
     chapter_title = data.get('chapter_title', f'챕터 {chapter_number}')
+    outline_content = data.get('outline', '')    # 챕터 개요 내용
+    details_content = data.get('details', '')    # 챕터 상세 내용
+    
+    print(f"[API 디버그] 챕터 업데이트 - 파일명: {filename}, 챕터 번호: {chapter_number}")
+    print(f"[API 디버그] 개요 길이: {len(outline_content)}, 상세 내용 길이: {len(details_content)}")
     
     if not filename.endswith('.md'):
         filename += '.md'
@@ -162,85 +168,125 @@ def update_chapter():
     try:
         # 파일 읽기
         with open(file_path, 'r', encoding='utf-8') as f:
-            content = f.read()
+            file_content = f.read()
         
-        # 스토리라인 섹션 추출 - 전체 문서를 탐색
-        storyline_pattern = r'## 스토리라인[\s\S]*?(?=^## |\Z)'
-        storyline_match = re.search(storyline_pattern, content, re.MULTILINE)
-        print(f"[디버그] 스토리라인 섹션 찾기 결과: {storyline_match is not None}")
-        
-        if not storyline_match:
-            # 스토리라인 섹션이 없는 경우, 파일 끝에 추가
-            content += f"\n\n## 스토리라인\n\n### 챕터 개요\n\n#### 챕터 {chapter_number}: {chapter_title}\n{new_content}\n"
-        else:
-            storyline_content = storyline_match.group(0)
-            print(f"[디버그] 스토리라인 콘텐츠 길이: {len(storyline_content)} 바이트")
+        # 1. 챕터 개요 섹션 업데이트 (outline_content 사용)
+        if outline_content:
+            # 스토리라인 섹션 찾기
+            storyline_pattern = r"## 스토리라인[\s\S]*?(?=^## |\Z)"
+            storyline_match = re.search(storyline_pattern, file_content, re.MULTILINE)
             
-            # 챕터 개요 섹션 추출 - 스토리라인 섹션 내에서 찾기 
-            chapter_outline_pattern = r'### 챕터 개요[\s\S]*?(?=^### |\Z)'
-            chapter_outline_match = re.search(chapter_outline_pattern, storyline_content, re.MULTILINE)
-            print(f"[디버그] 챕터 개요 섹션 찾기 결과: {chapter_outline_match is not None}")
-            
-            if not chapter_outline_match:
-                # 챕터 개요 섹션이 없는 경우, 스토리라인 섹션 끝에 추가
-                new_outline_section = f"\n\n### 챕터 개요\n\n#### 챕터 {chapter_number}: {chapter_title}\n{new_content}\n"
+            if storyline_match:
+                storyline_content = storyline_match.group(0)
                 
-                # 스토리라인 섹션에 챕터 개요 추가
-                updated_storyline = storyline_content + new_outline_section
-                content = content.replace(storyline_content, updated_storyline)
-            else:
-                chapter_outline_content = chapter_outline_match.group(0)
-                print(f"[디버그] 챕터 개요 콘텐츠 길이: {len(chapter_outline_content)} 바이트")
+                # 챕터 개요 섹션 찾기
+                chapter_outline_pattern = r"### 챕터 개요[\s\S]*?(?=### |## |$)"
+                chapter_outline_match = re.search(chapter_outline_pattern, storyline_content, re.MULTILINE)
                 
-                # 해당 챕터가 있는지 확인
-                chapter_pattern = fr"#### 챕터 {chapter_number}: [^\n]+[\s\S]*?(?=#### 챕터|^### |^## |\Z)"
-                chapter_match = re.search(chapter_pattern, chapter_outline_content, re.MULTILINE)
-                print(f"[디버그] 챕터 {chapter_number} 찾기 결과: {chapter_match is not None}")
-                
-                if chapter_match:
-                    # 기존 챕터 업데이트
-                    old_chapter_content = chapter_match.group(0)
-                    new_chapter_content = f"#### 챕터 {chapter_number}: {chapter_title}\n{new_content}"
+                if chapter_outline_match:
+                    # 챕터 개요 섹션이 있는 경우
+                    chapter_outline_content = chapter_outline_match.group(0)
                     
-                    print(f"[디버그] 기존 챕터 콘텐츠 길이: {len(old_chapter_content)}")
-                    print(f"[디버그] 새 챕터 콘텐츠 길이: {len(new_chapter_content)}")
+                    # 해당 챕터가 이미 있는지 확인
+                    chapter_pattern = rf"#### 챕터 {chapter_number}:[\s\S]*?(?=#### 챕터|### |## |$)"
+                    chapter_match = re.search(chapter_pattern, chapter_outline_content, re.DOTALL)
                     
-                    # 챕터 교체 전 콘텐츠 길이
-                    before_replace_length = len(content)
-                    content = content.replace(old_chapter_content, new_chapter_content)
-                    # 챕터 교체 후 콘텐츠 길이
-                    after_replace_length = len(content)
-                    
-                    print(f"[디버그] 교체 전 개체 콘텐츠 길이: {before_replace_length}")
-                    print(f"[디버그] 교체 후 개체 콘텐츠 길이: {after_replace_length}")
-                    print(f"[디버그] 교체 성공 여부: {before_replace_length != after_replace_length}")
+                    if chapter_match:
+                        # 기존 챕터 업데이트 - 여기가 핵심입니다!
+                        old_chapter_content = chapter_match.group(0)
+                        updated_outline = chapter_outline_content.replace(old_chapter_content, outline_content)
+                        updated_storyline = storyline_content.replace(chapter_outline_content, updated_outline)
+                        file_content = file_content.replace(storyline_content, updated_storyline)
+                    else:
+                        # 새 챕터 추가
+                        new_chapter_content = f"\n\n{outline_content}"
+                        updated_outline = chapter_outline_content + new_chapter_content
+                        updated_storyline = storyline_content.replace(chapter_outline_content, updated_outline)
+                        file_content = file_content.replace(storyline_content, updated_storyline)
                 else:
-                    # 새 챕터 추가
-                    new_chapter = f"\n\n#### 챕터 {chapter_number}: {chapter_title}\n{new_content}"
-                    print(f"[디버그] 새 챕터 추가 시작: 챕터 {chapter_number}")
-                    print(f"[디버그] 추가할 챕터 내용 길이: {len(new_chapter)}")
-                    print(f"[디버그] 챕터 개요 섹션 길이: {len(chapter_outline_content)}")
+                    # 챕터 개요 섹션이 없는 경우 추가
+                    new_section = f"\n\n### 챕터 개요\n\n{outline_content}"
+                    updated_storyline = storyline_content + new_section
+                    file_content = file_content.replace(storyline_content, updated_storyline)
+            else:
+                # 스토리라인 섹션이 없는 경우 추가
+                new_section = f"\n\n## 스토리라인\n\n### 챕터 개요\n\n{outline_content}"
+                file_content += new_section
+        
+        # 2. 챕터 상세 내용 섹션 업데이트 (details_content 사용)
+        if details_content:
+            # 스토리라인 섹션 찾기 (다시 찾아야 함 - 위에서 변경됐을 수 있음)
+            storyline_pattern = r"## 스토리라인[\s\S]*?(?=^## |\Z)"
+            storyline_match = re.search(storyline_pattern, file_content, re.MULTILINE)
+            
+            if storyline_match:
+                storyline_content = storyline_match.group(0)
+                
+                # 챕터 상세 내용 섹션 찾기
+                chapter_details_pattern = r"### 챕터 상세 내용[\s\S]*?(?=### |## |$)"
+                chapter_details_match = re.search(chapter_details_pattern, storyline_content, re.MULTILINE)
+                
+                if chapter_details_match:
+                    # 챕터 상세 내용 섹션이 있는 경우
+                    chapter_details_content = chapter_details_match.group(0)
                     
-                    # 챕터 번호 순서를 고려해 삽입
-                    chapter_numbers = [int(m.group(1)) for m in re.finditer(r'#### 챕터 (\d+):', chapter_outline_content)]
-                    print(f"[디버그] 찾은 챕터 번호들: {chapter_numbers}")
+                    # 해당 챕터가 이미 있는지 확인
+                    chapter_pattern = rf"#### 챕터 {chapter_number}:[\s\S]*?(?=#### 챕터|### |## |$)"
+                    chapter_match = re.search(chapter_pattern, chapter_details_content, re.DOTALL)
                     
-                    # 챕터 개요 섹션 내에 챕터 추가
-                    updated_chapter_outline = chapter_outline_content + new_chapter
-                    content = content.replace(chapter_outline_content, updated_chapter_outline)
+                    if chapter_match:
+                        # 기존 챕터 업데이트 - 여기도 핵심입니다!
+                        old_chapter_content = chapter_match.group(0)
+                        updated_details = chapter_details_content.replace(old_chapter_content, details_content)
+                        updated_storyline = storyline_content.replace(chapter_details_content, updated_details)
+                        file_content = file_content.replace(storyline_content, updated_storyline)
+                    else:
+                        # 새 챕터 추가
+                        new_chapter_content = f"\n\n{details_content}"
+                        updated_details = chapter_details_content + new_chapter_content
+                        updated_storyline = storyline_content.replace(chapter_details_content, updated_details)
+                        file_content = file_content.replace(storyline_content, updated_storyline)
+                else:
+                    # 챕터 상세 내용 섹션이 없는 경우
+                    
+                    # 챕터 개요 섹션 찾기
+                    chapter_outline_pattern = r"### 챕터 개요[\s\S]*?(?=### |## |$)"
+                    chapter_outline_match = re.search(chapter_outline_pattern, storyline_content, re.MULTILINE)
+                    
+                    if chapter_outline_match:
+                        # 챕터 개요 섹션 이후에 챕터 상세 내용 섹션 추가
+                        chapter_outline_content = chapter_outline_match.group(0)
+                        new_section = f"\n\n### 챕터 상세 내용\n\n{details_content}"
+                        updated_storyline = storyline_content.replace(chapter_outline_content, chapter_outline_content + new_section)
+                        file_content = file_content.replace(storyline_content, updated_storyline)
+                    else:
+                        # 챕터 개요 섹션도 없는 경우 (이미 앞에서 추가했을 수 있음)
+                        new_section = f"\n\n### 챕터 상세 내용\n\n{details_content}"
+                        updated_storyline = storyline_content + new_section
+                        file_content = file_content.replace(storyline_content, updated_storyline)
+            else:
+                # 스토리라인 섹션이 없는 경우 (이미 앞에서 추가했을 수 있음)
+                storyline_pattern = r"## 스토리라인[\s\S]*?(?=^## |\Z)"
+                storyline_match = re.search(storyline_pattern, file_content, re.MULTILINE)
+                
+                if storyline_match:
+                    # 스토리라인 섹션이 이미 추가된 경우
+                    storyline_content = storyline_match.group(0)
+                    new_section = f"\n\n### 챕터 상세 내용\n\n{details_content}"
+                    updated_storyline = storyline_content + new_section
+                    file_content = file_content.replace(storyline_content, updated_storyline)
+                else:
+                    # 스토리라인 섹션도 없는 경우 (이상한 경우, 이미 앞에서 추가했을 것)
+                    pass
         
         # 파일 업데이트
         with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-            
-        # 디버그 로그: 최종 파일 확인
-        print(f"[디버그] 최종 파일에 챕터 {chapter_number} 포함 여부: {'#### 챕터 ' + str(chapter_number) + ': ' in content}")
+            f.write(file_content)
         
         # Neo4j 데이터 업데이트
-        print(f"[디버그] 챕터 업데이트 후 지식 그래프 처리 시작: {file_path}")
         success = chapter_graph_generator.process_design_document(file_path, clear_db=True)
-        print(f"[디버그] 지식 그래프 처리 결과: {success}")
         
+        print(f"[API 디버그] 챕터 업데이트 완료: 챕터 {chapter_number}")
         return jsonify({
             'success': True,
             'message': f'챕터 {chapter_number} 업데이트 완료 (지식 그래프 업데이트: {success})'
@@ -328,18 +374,23 @@ def suggest_chapter_content():
         # 파일에서 게임 정보 로드
         game_design = _load_game_design(file_path)
         
-        # GraphRAG를 사용하여 추천 내용 생성
-        suggested_content = graph_rag.generate_chapter_content(
+        # GraphRAG를 사용하여 추천 내용 생성 (개요와 상세 내용 모두)
+        print(f"[API 디버그] GraphRAG 추천 요청: 챕터 {chapter_number}, 제목: {chapter_title}")
+        chapter_content = graph_rag.generate_complete_chapter(
             game_title=game_design.get('game_title', ''),
             chapter_number=chapter_number,
             chapter_title=chapter_title,
             guideline=guideline
         )
+        print(f"[API 디버그] GraphRAG 추천 결과: {type(chapter_content)}, 키: {chapter_content.keys() if isinstance(chapter_content, dict) else 'N/A'}")
         
-        return jsonify({
+        response_data = {
             'success': True,
-            'suggested_content': suggested_content
-        })
+            'outline': chapter_content['outline'],  # 챕터 개요
+            'details': chapter_content['details']   # 챕터 상세 내용
+        }
+        print(f"[API 디버그] 추천 API 응답: {response_data.keys()}")
+        return jsonify(response_data)
     
     except Exception as e:
         return jsonify({'error': str(e)}), 500

@@ -81,6 +81,26 @@
 
         <div class="row">
             <div class="col-lg-8 mx-auto">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h3>기존 기획서 목록</h3>
+                    </div>
+                    <div class="card-body">
+                        <div id="documentList" class="list-group mb-3">
+                            <!-- 문서 목록이 여기에 로드됩니다 -->
+                            <div class="text-center py-3" id="loadingDocuments">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p class="mt-2">문서 로딩 중...</p>
+                            </div>
+                            <div class="alert alert-info text-center" id="noDocuments" style="display: none;">
+                                아직 생성된 기획서가 없습니다. 위 도구를 사용하여 새 기획서를 만들어보세요.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
                 <div class="card">
                     <div class="card-header">
                         <h3>게임 기획 생성기</h3>
@@ -490,6 +510,9 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+        // 문서 목록 가져오기
+        fetchDocumentList();
+        
         // DOM 요소
         const generateBtn = document.getElementById('generateBtn');
         const resultContainer = document.getElementById('resultContainer');
@@ -505,6 +528,74 @@
                 storylineOptions.style.display = this.checked ? 'block' : 'none';
             });
         }
+        
+        // 문서 목록 가져오기 함수
+        function fetchDocumentList() {
+            const documentList = document.getElementById('documentList');
+            const loadingElement = document.getElementById('loadingDocuments');
+            const noDocumentsElement = document.getElementById('noDocuments');
+            
+            fetch('/api/documents')
+                .then(response => response.json())
+                .then(documents => {
+                    // 로딩 표시 제거
+                    loadingElement.style.display = 'none';
+                    
+                    if (documents.length === 0) {
+                        noDocumentsElement.style.display = 'block';
+                        return;
+                    }
+                    
+                    // 문서 목록 생성
+                    let html = '';
+                    documents.forEach(doc => {
+                        const date = new Date(doc.last_modified * 1000).toLocaleString();
+                        const fileSize = formatFileSize(doc.size);
+                        
+                        html += `
+                        <div class="list-group-item list-group-item-action">
+                            <div class="d-flex w-100 justify-content-between align-items-center">
+                                <h5 class="mb-1">${doc.title}</h5>
+                                <div>
+                                    <a href="/view/${doc.filename}" class="btn btn-sm btn-outline-primary me-1">
+                                        <i class="bi bi-eye"></i> 보기
+                                    </a>
+                                    <a href="/edit/${doc.filename}" class="btn btn-sm btn-primary">
+                                        <i class="bi bi-pencil"></i> 편집
+                                    </a>
+                                </div>
+                            </div>
+                            <p class="mb-1 text-muted">
+                                <small>마지막 수정: ${date} | 크기: ${fileSize}</small>
+                            </p>
+                        </div>
+                        `;
+                    });
+                    
+                    documentList.innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('문서 목록 가져오기 오류:', error);
+                    loadingElement.style.display = 'none';
+                    documentList.innerHTML = `
+                        <div class="alert alert-danger">
+                            문서 목록을 가져오는 중 오류가 발생했습니다.
+                        </div>
+                    `;
+                });
+        }
+        
+        // 파일 크기 포맷팅 함수
+        function formatFileSize(bytes) {
+            if (bytes < 1024) {
+                return bytes + ' bytes';
+            } else if (bytes < 1024 * 1024) {
+                return (bytes / 1024).toFixed(1) + ' KB';
+            } else {
+                return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+            }
+        }
+        
         
         // 게임 기획서 데이터를 저장할 전역 변수
         let gameDesignData = null;

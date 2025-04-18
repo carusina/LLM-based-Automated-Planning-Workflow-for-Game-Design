@@ -63,6 +63,10 @@ class ChapterKnowledgeGraphGenerator:
         overview_match = re.search(r'### 챕터 개요(.*?)(?=### 챕터 상세 내용|$)', markdown_content, re.DOTALL)
         chapter_section = ""
         
+        # 챕터 상세 내용 섹션 찾기
+        details_match = re.search(r'### 챕터 상세 내용(.*?)(?=##|$)', markdown_content, re.DOTALL)
+        details_section = ""
+        
         if overview_match:
             chapter_section = overview_match.group(1)
         else:
@@ -70,6 +74,9 @@ class ChapterKnowledgeGraphGenerator:
             storyline_match = re.search(r'## 스토리라인(.*?)(?=##|$)', markdown_content, re.DOTALL)
             if storyline_match:
                 chapter_section = storyline_match.group(1)
+                
+        if details_match:
+            details_section = details_match.group(1)
         
         if chapter_section:
             # 챕터 패턴
@@ -154,6 +161,17 @@ class ChapterKnowledgeGraphGenerator:
                     if self.debug:
                         print(f"  도전 과제: {challenges}")
                 
+                # 챕터 상세 내용 추출 (있는 경우)
+                chapter_details = ""
+                if details_section:
+                    # 현재 챕터의 상세 내용 패턴
+                    details_pattern = rf'#### 챕터 {chapter_number}: {re.escape(chapter_title)}\s*([\s\S]*?)(?=#### 챕터|### |## |$)'
+                    details_match = re.search(details_pattern, details_section)
+                    if details_match:
+                        chapter_details = details_match.group(1).strip()
+                        if self.debug:
+                            print(f"  상세 내용: {chapter_details[:100]}...")
+                
                 # 챕터 정보 저장
                 chapter_info = {
                     'number': chapter_number,
@@ -162,7 +180,8 @@ class ChapterKnowledgeGraphGenerator:
                     'goals': goals,
                     'locations': locations,
                     'events': events,
-                    'challenges': challenges
+                    'challenges': challenges,
+                    'details': chapter_details
                 }
                 
                 chapters.append(chapter_info)
@@ -251,7 +270,8 @@ class ChapterKnowledgeGraphGenerator:
                 CREATE (c:Chapter {
                     title: $title,
                     number: $number,
-                    description: $description
+                    description: $description,
+                    details: $details
                 })
                 WITH c
                 MATCH (g:Game {title: $game_title})
@@ -262,6 +282,7 @@ class ChapterKnowledgeGraphGenerator:
                     "title": chapter["title"],
                     "number": chapter["number"],
                     "description": chapter["description"],
+                    "details": chapter.get("details", ""),
                     "game_title": game_title
                 })
                 print(f"챕터 노드 생성: 챕터 {chapter['number']} - {chapter['title']}")

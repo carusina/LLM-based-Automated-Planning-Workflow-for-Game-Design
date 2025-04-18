@@ -339,9 +339,11 @@
                 document.getElementById('markdown-preview').innerHTML = marked.parse(content);
             });
             
-            // 글로벌 변수 - 추출된 챕터 정보
+            // 전역 변수 - 추출된 챕터 정보
             let extractedChapters = [];
-            let selectedChapterContent = '';
+            let selectedChapterOutline = '';
+            let selectedChapterDetails = '';
+            let selectedChapterContent = '';  // 적용할 챕터 내용
             
             // 로딩 오버레이 표시/숨기기 함수
             function showLoading() {
@@ -500,14 +502,126 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        // 추천 내용을 모달에 표시
-                        document.getElementById('suggestionContent').innerHTML = marked.parse(data.suggested_content);
+                        // 추천 내용을 모달에 표시 (개요와 상세 내용 모두)
+                        let outlineMarkdown = '';
+                        let detailsMarkdown = '';
                         
-                        // 추천 내용 저장 (원본 마크다운)
-                        selectedChapterContent = data.suggested_content;
+                        if (typeof data.outline === 'string') {
+                            // 문자열 형식인 경우
+                            outlineMarkdown = data.outline;
+                        } else if (typeof data.outline === 'object') {
+                            // 객체 형식인 경우 마크다운으로 변환
+                            outlineMarkdown = '#### 챕터 ' + data.outline.chapter_number + ': ' + data.outline.title + '\n';
+                            outlineMarkdown += data.outline.synopsis + '\n\n';
+                            
+                            if (data.outline.goals && data.outline.goals.length > 0) {
+                                outlineMarkdown += '**목표:**\n';
+                                data.outline.goals.forEach(goal => {
+                                    outlineMarkdown += '- ' + goal + '\n';
+                                });
+                                outlineMarkdown += '\n';
+                            }
+                            
+                            if (data.outline.key_locations && data.outline.key_locations.length > 0) {
+                                outlineMarkdown += '**주요 위치:**\n';
+                                data.outline.key_locations.forEach(location => {
+                                    outlineMarkdown += '- ' + location + '\n';
+                                });
+                                outlineMarkdown += '\n';
+                            }
+                            
+                            if (data.outline.key_events && data.outline.key_events.length > 0) {
+                                outlineMarkdown += '**주요 사건:**\n';
+                                data.outline.key_events.forEach(event => {
+                                    outlineMarkdown += '- ' + event + '\n';
+                                });
+                                outlineMarkdown += '\n';
+                            }
+                            
+                            if (data.outline.challenges && data.outline.challenges.length > 0) {
+                                outlineMarkdown += '**도전 과제:**\n';
+                                data.outline.challenges.forEach(challenge => {
+                                    outlineMarkdown += '- ' + challenge + '\n';
+                                });
+                            }
+                        }
                         
-                        // 디버그용 로깅
-                        console.log('수신된 추천 내용:', data.suggested_content);
+                        if (typeof data.details === 'string') {
+                            // 문자열 형식인 경우
+                            detailsMarkdown = data.details;
+                        } else if (typeof data.details === 'object') {
+                            // 객체 형식인 경우 마크다운으로 변환
+                            detailsMarkdown = '#### 챕터 ' + data.details.chapter_number + ': ' + data.details.title + '\n';
+                            detailsMarkdown += data.details.detailed_synopsis + '\n\n';
+                            detailsMarkdown += '**오프닝 씬:** ' + data.details.opening_scene + '\n\n';
+                            
+                            if (data.details.key_events && data.details.key_events.length > 0) {
+                                detailsMarkdown += '**주요 사건:**\n';
+                                data.details.key_events.forEach(event => {
+                                    detailsMarkdown += '- **' + event.event_title + '**: ';
+                                    detailsMarkdown += event.description + '\n';
+                                    detailsMarkdown += '- **플레이어 관여:** ' + event.player_involvement + '\n\n';
+                                    
+                                    if (event.gameplay_mechanics && event.gameplay_mechanics.length > 0) {
+                                        detailsMarkdown += '**관련 게임플레이 메커닉:**\n';
+                                        event.gameplay_mechanics.forEach(mechanic => {
+                                            detailsMarkdown += '- ' + mechanic + '\n';
+                                        });
+                                        detailsMarkdown += '\n';
+                                    }
+                                    
+                                    if (event.outcomes && event.outcomes.length > 0) {
+                                        detailsMarkdown += '**가능한 결과:**\n';
+                                        event.outcomes.forEach(outcome => {
+                                            detailsMarkdown += '- ' + outcome + '\n';
+                                        });
+                                        detailsMarkdown += '\n';
+                                    }
+                                });
+                            }
+                            
+                            // 캐릭터, 장소, 도전 과제 등 추가 정보 처리...
+                            if (data.details.characters && data.details.characters.length > 0) {
+                                detailsMarkdown += '**등장 캐릭터:**\n';
+                                data.details.characters.forEach(character => {
+                                    detailsMarkdown += '**' + character.name + '** (' + character.role + ')\n';
+                                    detailsMarkdown += '- 상호작용: ' + character.interactions + '\n';
+                                    detailsMarkdown += '- 발전/변화: ' + character.development + '\n\n';
+                                });
+                            }
+                            
+                            if (data.details.locations && data.details.locations.length > 0) {
+                                detailsMarkdown += '**주요 장소:**\n';
+                                data.details.locations.forEach(location => {
+                                    detailsMarkdown += '- **' + location.name + '**: ';
+                                    detailsMarkdown += location.description + '\n';
+                                    detailsMarkdown += '- **중요성:** ' + location.significance + '\n\n';
+                                });
+                            }
+                            
+                            if (data.details.climax) {
+                                detailsMarkdown += '**클라이맥스:**\n' + data.details.climax + '\n\n';
+                            }
+                            
+                            if (data.details.ending) {
+                                detailsMarkdown += '**엔딩:**\n' + data.details.ending + '\n\n';
+                            }
+                            
+                            if (data.details.connection_to_next_chapter) {
+                                detailsMarkdown += '**다음 챕터와의 연결:**\n' + data.details.connection_to_next_chapter + '\n\n';
+                            }
+                        }
+                        
+                        const outlineHtml = marked.parse(outlineMarkdown);
+                        const detailsHtml = detailsMarkdown ? marked.parse(detailsMarkdown) : '';
+                        
+                        document.getElementById('suggestionContent').innerHTML = 
+                            '<h4>챕터 개요</h4>' + outlineHtml + 
+                            (detailsHtml ? '<hr><h4>챕터 상세 내용</h4>' + detailsHtml : '');
+                        
+                        // 추천 내용 저장 (원본 마크다운으로 변환한 것)
+                        selectedChapterOutline = outlineMarkdown;
+                        selectedChapterDetails = detailsMarkdown;
                         
                         // 모달 표시
                         const suggestionModal = new bootstrap.Modal(document.getElementById('suggestionModal'));
@@ -524,11 +638,12 @@
                     hideLoading();
                 });
             });
-            
+
             // 추천 내용 사용하기 버튼 클릭 이벤트
             document.getElementById('useSuggestionBtn').addEventListener('click', function() {
-                // 가져온 추천 내용을 그대로 사용 (이미 selectedChapterContent에 저장되어 있음)
-                console.log('사용할 챕터 내용:', selectedChapterContent);
+                // 생성된 마크다운 내용을 합쳐서 사용
+                selectedChapterContent = selectedChapterOutline + '\n\n' + selectedChapterDetails;
+                console.log('사용할 챕터 내용 길이:', selectedChapterContent.length);
                 
                 // 모달 닫기 후 내용 적용
                 const suggestionModal = bootstrap.Modal.getInstance(document.getElementById('suggestionModal'));
@@ -667,7 +782,7 @@
                 markdownEditor.setValue(updatedContent);
                 
                 // API 호출하여 챕터 저장
-                saveChapter(chapterNumber, chapterTitle, selectedChapterContent);
+                saveChapter(chapterNumber, chapterTitle, selectedChapterOutline, selectedChapterDetails);
                 
                 // 추출된 챕터 목록 다시 갱신
                 setTimeout(() => {
@@ -676,25 +791,35 @@
             });
             
             // 챕터 저장 함수
-            function saveChapter(chapterNumber, chapterTitle, chapterContent) {
+            function saveChapter(chapterNumber, chapterTitle, chapterOutline, chapterDetails) {
                 showLoading();
                 
-                console.log('저장할 챕터 내용:', chapterContent);
+                console.log('저장할 챕터 개요 길이:', chapterOutline.length);
+                console.log('저장할 챕터 상세 내용 길이:', chapterDetails.length);
+                
+                const requestData = {
+                    filename: '{{ full_filename }}',
+                    chapter_number: chapterNumber,
+                    chapter_title: chapterTitle,
+                    outline: chapterOutline,
+                    details: chapterDetails
+                };
+                
+                console.log('백엔드로 보내는 데이터 키:', Object.keys(requestData));
                 
                 fetch('/api/chapter/update', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({
-                        filename: '{{ full_filename }}',
-                        chapter_number: chapterNumber,
-                        chapter_title: chapterTitle,
-                        content: chapterContent
-                    })
+                    body: JSON.stringify(requestData)
                 })
-                .then(response => response.json())
+                .then(response => {
+                    console.log('API 응답 상태코드:', response.status);
+                    return response.json();
+                })
                 .then(data => {
+                    console.log('API 응답 데이터:', data);
                     if (data.success) {
                         alert(data.message);
                     } else {

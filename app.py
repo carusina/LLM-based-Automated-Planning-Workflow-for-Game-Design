@@ -178,9 +178,9 @@ def update_chapter():
             
             if storyline_match:
                 storyline_content = storyline_match.group(0)
-                
+
                 # 챕터 개요 섹션 찾기
-                chapter_outline_pattern = r"### 챕터 개요[\s\S]*?(?=### |## |$)"
+                chapter_outline_pattern = r"### 챕터 개요[\s\S]*(?=### |## |$)"
                 chapter_outline_match = re.search(chapter_outline_pattern, storyline_content, re.MULTILINE)
                 
                 if chapter_outline_match:
@@ -188,9 +188,9 @@ def update_chapter():
                     chapter_outline_content = chapter_outline_match.group(0)
                     
                     # 해당 챕터가 이미 있는지 확인
-                    chapter_pattern = rf"#### 챕터 {chapter_number}:[\s\S]*?(?=#### 챕터|### |## |$)"
+                    chapter_pattern = fr"#### 챕터 {chapter_number}:[\s\S]*?(?=#### 챕터|### |## |$)"
                     chapter_match = re.search(chapter_pattern, chapter_outline_content, re.DOTALL)
-                    
+
                     if chapter_match:
                         # 기존 챕터 업데이트 - 여기가 핵심입니다!
                         old_chapter_content = chapter_match.group(0)
@@ -223,7 +223,7 @@ def update_chapter():
                 storyline_content = storyline_match.group(0)
                 
                 # 챕터 상세 내용 섹션 찾기
-                chapter_details_pattern = r"### 챕터 상세 내용[\s\S]*?(?=### |## |$)"
+                chapter_details_pattern = r"### 챕터 상세 내용[\s\S]*(?=### |## |$)"
                 chapter_details_match = re.search(chapter_details_pattern, storyline_content, re.MULTILINE)
                 
                 if chapter_details_match:
@@ -231,7 +231,7 @@ def update_chapter():
                     chapter_details_content = chapter_details_match.group(0)
                     
                     # 해당 챕터가 이미 있는지 확인
-                    chapter_pattern = rf"#### 챕터 {chapter_number}:[\s\S]*?(?=#### 챕터|### |## |$)"
+                    chapter_pattern = fr"#### 챕터 {chapter_number}:[\s\S]*?(?=#### 챕터|### |## |$)"
                     chapter_match = re.search(chapter_pattern, chapter_details_content, re.DOTALL)
                     
                     if chapter_match:

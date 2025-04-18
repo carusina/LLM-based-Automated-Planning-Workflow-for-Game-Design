@@ -8,6 +8,7 @@
 - **경쟁 분석**: 입력한 경쟁 게임에 대한 분석을 통해 차별화 포인트를 도출합니다.
 - **다양한 문서 형식 지원**: 마크다운(.md), 워드 문서(.docx), PDF(.pdf) 형식으로 기획서를 다운로드할 수 있습니다.
 - **사용자 친화적 인터페이스**: 직관적인 웹 인터페이스를 통해 손쉽게 기획서를 생성하고 결과를 확인할 수 있습니다.
+- **GraphRAG 기반 생성**: 기존 컨텐츠와 일관성 있는 새로운 챕터 내용 생성할 수 있습니다.
 
 ## 기술 스택
 
@@ -74,12 +75,17 @@
 
 ## 시스템 구조
 
-- **app.py**: 메인 애플리케이션 파일 및 API 엔드포인트
-- **models/llm_service.py**: LLM API 통합을 위한 서비스 클래스
-- **models/game_design_generator.py**: 게임 기획 생성 로직
-- **models/storyline_generator.py**: 게임 스토리라인 생성 로직
-- **models/document_generator.py**: 다양한 형식의 문서 생성 로직
-- **templates/index.html**: 웹 인터페이스 템플릿
+- `app.py`: 메인 애플리케이션 및 API 엔드포인트
+- `models/`: 핵심 기능 구현 모듈
+  - `llm_service.py`: LLM API 연동
+  - `game_design_generator.py`: 게임 기획서 생성
+  - `document_generator.py`: 문서 생성 및 포맷팅
+  - `storyline_generator.py`: 스토리라인 생성
+  - `knowledge_graph_service.py`: Neo4j 연동
+  - `graph_rag.py`: GraphRAG(Retrieval-Augmented Generation) 구현
+- `chapter_to_knowledge_graph.py`: 챕터 정보를 지식 그래프로 변환
+- `templates/`: 웹 인터페이스 템플릿
+- `output/`: 생성된 문서 저장 폴더
 
 ## 사용 예시
 

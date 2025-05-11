@@ -1,256 +1,541 @@
-# models/graph_rag.py
-from typing import Dict, List, Any, Optional
-import re
+"""
+graph_rag.py
+
+Graph-RAG(Retrieval Augmented Generation) 모듈
+- Neo4j 지식 그래프를 활용한 문서 수정 및 업데이트
+- 기존 그래프와의 일관성을 유지하며 내용 반영
+"""
+
+import os
+import logging
 import json
+from typing import Dict, List, Any, Optional, Tuple
+import re
+
+from .knowledge_graph_service import KnowledgeGraphService
+from .llm_service import LLMService
 
 class GraphRAG:
-    """그래프 기반 검색 증강 생성(Graph Retrieval-Augmented Generation) 클래스"""
+    """
+    Neo4j 지식 그래프를 활용한 RAG(Retrieval Augmented Generation) 서비스
     
-    def __init__(self, llm_service, knowledge_graph_service):
+    기존 게임 데이터와 그래프를 바탕으로 내용 수정이나 추가 시 일관성을 유지합니다.
+    LLM에 그래프의 컨텍스트를 제공하여 더 정확한 내용 생성 및 갱신을 지원합니다.
+    """
+    
+    def __init__(self, kg_service: KnowledgeGraphService = None, llm_service: LLMService = None):
         """
-        GraphRAG 초기화
+        Graph-RAG 초기화
         
         Args:
-            llm_service: LLM 서비스 인스턴스
-            knowledge_graph_service: Neo4j 지식 그래프 서비스 인스턴스
+            kg_service (KnowledgeGraphService, optional): 지식 그래프 서비스 인스턴스
+            llm_service (LLMService, optional): LLM 서비스 인스턴스
         """
-        self.llm_service = llm_service
-        self.kg_service = knowledge_graph_service
+        self.kg = kg_service or KnowledgeGraphService()
+        self.llm = llm_service or LLMService()
+        
+        # 로깅 설정
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger(self.__class__.__name__)
     
-    def generate_chapter_content(self, game_title, chapter_number, chapter_title="", guideline="", include_details=True):
+    def extract_relevant_knowledge(self, query: str, context_type: str = "general") -> Dict[str, Any]:
         """
-        챕터 내용을 생성합니다.
+        쿼리 관련 지식 그래프 정보 추출
         
         Args:
-            game_title: 게임 제목
-            chapter_number: 챕터 번호
-            chapter_title: 챕터 제목 (없으면 빈 문자열)
-            guideline: 사용자가 입력한 가이드라인
-            include_details: 챕터 상세 내용 포함 여부 (기본값: True)
+            query (str): 검색 쿼리 또는 문맥
+            context_type (str, optional): 컨텍스트 유형 ("character", "location", "chapter", "general")
             
         Returns:
-            생성된 챕터 내용
+            Dict[str, Any]: 추출된 관련 정보
         """
-        # 1. 지식 그래프에서 관련 정보 검색
-        neighbors = self.kg_service.get_chapter_neighbors(game_title, chapter_number)
-        related_elements = self.kg_service.get_related_elements(game_title, None, None)
+        self.logger.info(f"Extracting relevant knowledge for query: {query[:50]}...")
         
-        # 게임 전체 정보 추출
-        game_overview = {
-            "title": game_title,
+        # 기본 응답 구조
+        context = {
+            "characters": [],
+            "locations": [],
+            "races": [],
             "chapters": [],
-            "characters": []
+            "relationships": []
         }
         
-        # 챕터 정보 수집
-        if "chapters" in related_elements:
-            for chapter in related_elements["chapters"]:
-                game_overview["chapters"].append({
-                    "number": chapter["chapter_number"],
-                    "title": chapter["chapter_title"]
-                })
+        # 정규 표현식으로 주요 엔티티 추출
+        character_names = self._extract_entities(query, "Character")
+        location_names = self._extract_entities(query, "Location")
+        race_names = self._extract_entities(query, "Race")
+        chapter_references = self._extract_chapters(query)
         
         # 캐릭터 정보 수집
-        if "characters" in related_elements:
-            for character in related_elements["characters"]:
-                game_overview["characters"].append({
-                    "name": character["name"],
-                    "role": character["role"]
-                })
-        
-        # 이전 챕터와 다음 챕터 정보
-        previous_chapters = neighbors.get("previous", [])
-        next_chapters = neighbors.get("next", [])
-        
-        # 이전/다음 챕터가 있다면 해당 챕터의 세부 정보 가져오기
-        prev_chapter_details = None
-        if previous_chapters:
-            prev_number = previous_chapters[0]["number"]
-            prev_details = self.kg_service.get_related_elements(game_title, prev_number)
-            if prev_details and len(prev_details) > 0:
-                prev_chapter_details = prev_details[0]
-        
-        # 2. 챕터 내용 생성을 위한 프롬프트 구성
-        if not chapter_title and game_overview["chapters"]:
-            # 챕터 제목이 제공되지 않으면 기존 챕터 제목 찾기
-            for chapter in game_overview["chapters"]:
-                if chapter["number"] == chapter_number:
-                    chapter_title = chapter["title"]
-                    break
-        
-        # 만약 여전히 제목이 없으면 기본값 사용
-        if not chapter_title:
-            chapter_title = f"챕터 {chapter_number}"
-        
-        # 프롬프트 구성
-        prompt = f"""게임 제목: {game_title}
-
-        ## 작업 설명
-        챕터 {chapter_number}: "{chapter_title}"에 대한 상세 내용을 생성해야 합니다.
-        
-        ## 게임 개요
-        - 제목: {game_title}
-        """
-        
-        # 챕터 구조 추가
-        prompt += "\n## 챕터 구조\n"
-        for chapter in sorted(game_overview["chapters"], key=lambda x: x["number"]):
-            prompt += f"- 챕터 {chapter['number']}: {chapter['title']}\n"
-        
-        # 캐릭터 정보 추가
-        if game_overview["characters"]:
-            prompt += "\n## 주요 캐릭터\n"
-            for character in game_overview["characters"]:
-                prompt += f"- {character['name']} ({character['role']})\n"
-        
-        # 연속성을 위한 이전 챕터 정보 추가
-        if prev_chapter_details:
-            prompt += f"\n## 이전 챕터 ({previous_chapters[0]['number']}: {previous_chapters[0]['title']}) 요약\n"
-            prompt += f"제목: {prev_chapter_details.get('chapter_title', '')}\n"
-            prompt += f"설명: {prev_chapter_details.get('chapter_description', '')}\n"
+        if character_names or context_type == "character":
+            character_details = []
             
-            if prev_chapter_details.get('events'):
-                prompt += "주요 사건:\n"
-                for event in prev_chapter_details.get('events', []):
-                    if event:
-                        prompt += f"- {event}\n"
+            # 모든 캐릭터 기본 정보 가져오기
+            if not character_names:
+                characters = self.kg.get_characters()
+                character_names = [char["name"] for char in characters if "name" in char]
             
-            if prev_chapter_details.get('locations'):
-                prompt += "위치:\n"
-                for location in prev_chapter_details.get('locations', []):
-                    if location:
-                        prompt += f"- {location}\n"
-        
-        # 사용자 가이드라인 추가
-        if guideline:
-            prompt += f"\n## 사용자 가이드라인\n{guideline}\n"
-        
-        # 출력 스키마 정의 (챕터 개요)
-        chapter_outline_schema = {
-            "chapter_number": chapter_number,
-            "title": chapter_title,
-            "synopsis": "챕터 개요",
-            "goals": ["플레이어 목표 1", "플레이어 목표 2"],
-            "key_locations": ["주요 위치 1", "주요 위치 2"],
-            "key_events": ["주요 사건 1", "주요 사건 2"],
-            "challenges": ["도전 1", "도전 2"]
-        }
-        
-        # 출력 스키마 정의 (챕터 상세 내용)
-        chapter_details_schema = {
-            "chapter_number": chapter_number,
-            "title": chapter_title,
-            "detailed_synopsis": "상세 시놉시스",
-            "opening_scene": "오프닝 씬 설명",
-            "key_events": [
-                {
-                    "event_title": "이벤트 제목",
-                    "description": "이벤트 설명",
-                    "player_involvement": "플레이어 관여 방식",
-                    "gameplay_mechanics": ["관련 게임플레이 메커닉 1", "관련 게임플레이 메커닉 2"],
-                    "outcomes": ["가능한 결과 1", "가능한 결과 2"]
+            # 개별 캐릭터 정보 및 관계 수집
+            for name in character_names:
+                # 캐릭터 관계 가져오기
+                relationships = self.kg.get_character_relationships(name)
+                
+                character_info = {
+                    "name": name,
+                    "relationships": relationships
                 }
-            ],
-            "characters": [
-                {
-                    "name": "캐릭터 이름",
-                    "role": "이 챕터에서의 역할",
-                    "interactions": "플레이어와의 상호작용",
-                    "development": "캐릭터 발전/변화"
-                }
-            ],
-            "locations": [
-                {
-                    "name": "장소 이름",
-                    "description": "장소 설명",
-                    "significance": "스토리에서의 중요성",
-                    "gameplay_elements": ["게임플레이 요소 1", "게임플레이 요소 2"]
-                }
-            ],
-            "challenges": [
-                {
-                    "challenge_type": "도전 유형 (전투, 퍼즐, 선택 등)",
-                    "description": "도전 설명",
-                    "difficulty": "난이도",
-                    "rewards": ["보상 1", "보상 2"]
-                }
-            ],
-            "choices_and_consequences": [
-                {
-                    "choice_point": "선택 지점",
-                    "options": ["선택지 1", "선택지 2"],
-                    "consequences": ["결과 1", "결과 2"]
-                }
-            ],
-            "climax": "챕터 클라이맥스 설명",
-            "ending": "챕터 엔딩 설명",
-            "connection_to_next_chapter": "다음 챕터와의 연결",
-            "key_items": ["주요 아이템 1", "주요 아이템 2"],
-            "secrets": ["숨겨진 비밀/이스터에그 1", "숨겨진 비밀/이스터에그 2"]
-        }
-        
-        # 생성 요청 추가
-        prompt += """
-        ## 요청
-        사용자 가이드라인을 필수적으로 반영해주세요.
-        """
-        
-        # 3. LLM으로 내용 생성
-        try:
-            if not include_details:
-                # 챕터 개요만 생성
-                return self.llm_service.generate_structured_output(
-                    prompt=prompt,
-                    output_schema=chapter_outline_schema,
-                    provider="openai",
-                    temperature=0.7
-                )
-            else:
-                # 챕터 상세 내용 생성
-                return self.llm_service.generate_structured_output(
-                    prompt=prompt,
-                    output_schema=chapter_details_schema,
-                    provider="openai",
-                    temperature=0.7
-                )
+                character_details.append(character_info)
             
-        except Exception as e:
-            print(f"챕터 내용 생성 중 오류 발생: {str(e)}")
-            return {"error": f"내용 생성 중 오류가 발생했습니다: {str(e)}"}
-
-    def generate_complete_chapter(self, game_title, chapter_number, chapter_title="", guideline=""):
+            context["characters"] = character_details
+        
+        # 장소 정보 수집
+        if location_names or context_type == "location":
+            # 모든 장소 정보 가져오기 (장소명이 없거나 "location" 컨텍스트인 경우)
+            locations = self.kg.get_locations()
+            
+            if location_names:
+                # 특정 장소만 필터링
+                locations = [loc for loc in locations if loc.get("name") in location_names]
+            
+            context["locations"] = locations
+        
+        # 챕터 정보 수집
+        if chapter_references or context_type == "chapter":
+            chapter_details = []
+            
+            # 챕터 번호를 정수로 변환
+            chapter_numbers = []
+            for ref in chapter_references:
+                try:
+                    num = int(ref)
+                    chapter_numbers.append(num)
+                except ValueError:
+                    continue
+            
+            # 지정된 챕터 정보 가져오기
+            for num in chapter_numbers:
+                chapter_info = self.kg.get_chapter_details(num)
+                if chapter_info:
+                    chapter_details.append(chapter_info)
+            
+            context["chapters"] = chapter_details
+        
+        self.logger.info(f"Extracted context with {len(context['characters'])} characters, " +
+                        f"{len(context['locations'])} locations, " +
+                        f"{len(context['chapters'])} chapters")
+        
+        return context
+    
+    def _extract_entities(self, text: str, entity_type: str) -> List[str]:
         """
-        챕터의 개요와 상세 내용을 모두 생성합니다.
+        텍스트에서 엔티티 이름 추출
         
         Args:
-            game_title: 게임 제목
-            chapter_number: 챕터 번호
-            chapter_title: 챕터 제목 (없으면 빈 문자열)
-            guideline: 사용자가 입력한 가이드라인
+            text (str): 분석할 텍스트
+            entity_type (str): 엔티티 유형 ("Character", "Location", "Race")
             
         Returns:
-            개요와 상세 내용을 포함한 딕셔너리
+            List[str]: 추출된 엔티티 이름 목록
         """
-        # 챕터 개요 생성
-        chapter_outline = self.generate_chapter_content(
-            game_title=game_title,
-            chapter_number=chapter_number,
-            chapter_title=chapter_title,
-            guideline=guideline,
-            include_details=False
-        )
+        # 간단한 구현: 대문자로 시작하는 단어를 엔티티로 간주
+        # 실제 구현에서는 그래프에서 기존 엔티티 목록을 가져와 매칭하는 방식이 더 정확함
+        words = re.findall(r'\b[A-Z][a-zA-Z]*\b', text)
+        return list(set(words))
+    
+    def _extract_chapters(self, text: str) -> List[str]:
+        """
+        텍스트에서 챕터 참조 추출
         
-        # 챕터 상세 내용 생성
-        chapter_details = self.generate_chapter_content(
-            game_title=game_title,
-            chapter_number=chapter_number,
-            chapter_title=chapter_title,
-            guideline=guideline,
-            include_details=True
-        )
+        Args:
+            text (str): 분석할 텍스트
+            
+        Returns:
+            List[str]: 추출된 챕터 번호 또는 참조
+        """
+        # 챕터 숫자 찾기 (예: "챕터 1", "Chapter 2" 등)
+        chapter_refs = re.findall(r'[Cc]hapter\s+(\d+)|[챕터]\s*(\d+)', text)
         
-        # 필요한 정보만 반환
-        return {
-            "outline": chapter_outline,  # 챕터 개요
-            "details": chapter_details   # 챕터 상세 내용
+        # 결과 평탄화
+        result = []
+        for tup in chapter_refs:
+            for num in tup:
+                if num:
+                    result.append(num)
+        
+        return list(set(result))
+    
+    def format_context_for_llm(self, context: Dict[str, Any]) -> str:
+        """
+        LLM 프롬프트에 적합한 형식으로 컨텍스트 포맷팅
+        
+        Args:
+            context (Dict[str, Any]): 컨텍스트 정보
+            
+        Returns:
+            str: LLM 프롬프트용 포맷된 컨텍스트 문자열
+        """
+        sections = []
+        
+        # 캐릭터 정보 포맷팅
+        if context["characters"]:
+            char_section = ["## 캐릭터 정보"]
+            
+            for char in context["characters"]:
+                char_info = [f"### {char['name']}"]
+                
+                # 관계 정보 추가
+                if char.get("relationships"):
+                    relations = []
+                    for rel in char["relationships"]:
+                        rel_char = rel.get("related_character", "")
+                        rel_type = rel.get("relationship_type", "")
+                        
+                        # Neo4j 관계 유형을 가독성 있는 텍스트로 변환
+                        if rel_type == "TRUSTS":
+                            rel_desc = "신뢰"
+                        elif rel_type == "FRIENDLY_WITH":
+                            rel_desc = "우호적"
+                        elif rel_type == "NEUTRAL_WITH":
+                            rel_desc = "중립"
+                        elif rel_type == "HOSTILE_WITH":
+                            rel_desc = "적대적"
+                        elif rel_type == "HATES":
+                            rel_desc = "증오"
+                        else:
+                            rel_desc = "관련됨"
+                        
+                        relations.append(f"- {rel_char}와(과)의 관계: {rel_desc}")
+                    
+                    if relations:
+                        char_info.append("관계:")
+                        char_info.extend(relations)
+                
+                char_section.append("\n".join(char_info))
+            
+            sections.append("\n\n".join(char_section))
+        
+        # 장소 정보 포맷팅
+        if context["locations"]:
+            loc_section = ["## 장소 정보"]
+            
+            for loc in context["locations"]:
+                loc_info = [f"### {loc.get('name', '알 수 없는 장소')}"]
+                
+                # 서식 종족 정보 추가
+                if loc.get("inhabited_by") and any(loc["inhabited_by"]):
+                    races = ", ".join([r for r in loc["inhabited_by"] if r])
+                    loc_info.append(f"서식 종족: {races}")
+                
+                loc_section.append("\n".join(loc_info))
+            
+            sections.append("\n\n".join(loc_section))
+        
+        # 챕터 정보 포맷팅
+        if context["chapters"]:
+            chap_section = ["## 챕터 정보"]
+            
+            for chap in context["chapters"]:
+                chap_info = [f"### 챕터 {chap.get('order', '?')}: {chap.get('title', '제목 없음')}"]
+                
+                # 장소 정보 추가
+                if chap.get("locations") and any(chap["locations"]):
+                    locations = ", ".join([l for l in chap["locations"] if l])
+                    chap_info.append(f"장소: {locations}")
+                
+                # 등장인물 정보 추가
+                if chap.get("characters") and any(chap["characters"]):
+                    chars = []
+                    for c in chap["characters"]:
+                        name = c.get("name", "")
+                        race = c.get("race", "")
+                        if name:
+                            if race:
+                                chars.append(f"{name} ({race})")
+                            else:
+                                chars.append(name)
+                    
+                    if chars:
+                        chap_info.append(f"등장인물: {', '.join(chars)}")
+                
+                chap_section.append("\n".join(chap_info))
+            
+            sections.append("\n\n".join(chap_section))
+        
+        # 모든 섹션 결합
+        if sections:
+            return "\n\n".join(sections)
+        else:
+            return "관련 정보를 찾을 수 없습니다."
+    
+    def build_rag_prompt(self, original_content: str, update_request: str, context: Dict[str, Any]) -> str:
+        """
+        RAG 프롬프트 구성
+        
+        Args:
+            original_content (str): 기존 문서 내용
+            update_request (str): 업데이트 요청 내용
+            context (Dict[str, Any]): 지식 그래프에서 추출한 컨텍스트
+            
+        Returns:
+            str: LLM에 전달할 최종 프롬프트
+        """
+        # 컨텍스트 포맷팅
+        formatted_context = self.format_context_for_llm(context)
+        
+        # 프롬프트 구성
+        prompt_parts = [
+            "아래 기존 문서를 제공된 요청에 따라 업데이트해주세요.",
+            "업데이트 시 다음 제약 사항을 반드시 준수해주세요:",
+            "1. 기존 게임 세계관 및 설정과 일관성을 유지할 것",
+            "2. 캐릭터, 장소, 종족 간 기존 관계를 존중할 것",
+            "3. 새로운 내용을 추가하는 경우, 기존 정보와 충돌하지 않도록 할 것",
+            "4. 명시적으로 변경이 요청된 경우에만 기존 내용을 수정할 것",
+            "5. 원본 문서의 형식과 구조를 유지할 것",
+            "",
+            "## 기존 문서 내용",
+            original_content,
+            "",
+            "## 업데이트 요청",
+            update_request,
+            "",
+            "## 관련 컨텍스트 정보 (지식 그래프에서 추출)",
+            formatted_context,
+            "",
+            "위 정보를 바탕으로 업데이트된 완전한 문서를 생성해주세요."
+        ]
+        
+        return "\n\n".join(prompt_parts)
+    
+    def update_from_document(
+        self, 
+        original_content: str, 
+        update_request: str, 
+        context_type: str = "general", 
+        temperature: float = 0.3
+    ) -> str:
+        """
+        지식 그래프를 활용하여 문서 업데이트
+        
+        Args:
+            original_content (str): 기존 문서 내용
+            update_request (str): 업데이트 요청 내용
+            context_type (str, optional): 컨텍스트 유형
+            temperature (float, optional): LLM 생성 온도
+            
+        Returns:
+            str: 업데이트된 문서 내용
+        """
+        self.logger.info("Starting document update with Graph-RAG...")
+        
+        try:
+            # 관련 컨텍스트 추출
+            context = self.extract_relevant_knowledge(
+                query=update_request + "\n" + original_content[:500],  # 요청과 문서 앞부분을 분석
+                context_type=context_type
+            )
+            
+            # RAG 프롬프트 구성
+            prompt = self.build_rag_prompt(original_content, update_request, context)
+            
+            # LLM으로 업데이트된 문서 생성
+            self.logger.info("Generating updated document with LLM...")
+            updated_content = self.llm.generate(
+                prompt=prompt,
+                temperature=temperature,
+                max_tokens=4096  # 적절한 토큰 수 설정
+            )
+            
+            self.logger.info("Document update completed successfully")
+            return updated_content
+            
+        except Exception as e:
+            self.logger.error(f"Error updating document: {e}")
+            raise
+
+    def extract_entities_from_document(self, document: str) -> Dict[str, List[str]]:
+        """
+        문서에서 엔티티(캐릭터, 장소, 종족 등) 추출
+        
+        Args:
+            document (str): 분석할 문서 내용
+            
+        Returns:
+            Dict[str, List[str]]: 추출된 엔티티 정보
+                {
+                    "characters": [...],
+                    "locations": [...],
+                    "races": [...],
+                    "relationships": {character1: {character2: "friendly", ...}, ...}
+                }
+        """
+        # LLM을 사용하여 엔티티 추출
+        prompt = f"""
+        다음 게임 문서에서 등장하는 모든 엔티티(캐릭터, 장소, 종족 등)와 그들 간의 관계를 추출해주세요.
+        다음 JSON 형식으로 결과를 반환해주세요:
+        
+        {{
+            "characters": ["캐릭터1", "캐릭터2", ...],
+            "locations": ["장소1", "장소2", ...],
+            "races": ["종족1", "종족2", ...],
+            "relationships": {{
+                "캐릭터1": {{
+                    "캐릭터2": "신뢰|우호적|중립|적대적|증오",
+                    ...
+                }},
+                ...
+            }}
+        }}
+        
+        문서 내용:
+        {document[:10000]}  # 문서가 너무 길면 앞부분만 사용
+        """
+        
+        try:
+            # LLM으로 엔티티 추출
+            self.logger.info("Extracting entities from document with LLM...")
+            result = self.llm.generate(prompt=prompt, temperature=0.1)
+            
+            # JSON 파싱
+            try:
+                # JSON 부분만 추출
+                json_match = re.search(r'\{[\s\S]*\}', result)
+                if json_match:
+                    result_json = json_match.group(0)
+                    entities = json.loads(result_json)
+                    return entities
+                else:
+                    self.logger.warning("JSON 형식을 찾을 수 없습니다.")
+                    return {"characters": [], "locations": [], "races": [], "relationships": {}}
+            except json.JSONDecodeError as e:
+                self.logger.warning(f"JSON 파싱 오류: {e}")
+                return {"characters": [], "locations": [], "races": [], "relationships": {}}
+                
+        except Exception as e:
+            self.logger.error(f"엔티티 추출 오류: {e}")
+            return {"characters": [], "locations": [], "races": [], "relationships": {}}
+    
+    def update_graph_from_document(self, document: str) -> Dict[str, Any]:
+        """
+        문서를 분석하여 지식 그래프 업데이트
+        
+        Args:
+            document (str): 업데이트할 문서 내용
+            
+        Returns:
+            Dict[str, Any]: 업데이트 결과 통계
+                {
+                    "added_characters": 추가된 캐릭터 수,
+                    "added_locations": 추가된 장소 수,
+                    "added_races": 추가된 종족 수,
+                    "added_relationships": 추가된 관계 수
+                }
+        """
+        stats = {
+            "added_characters": 0,
+            "added_locations": 0,
+            "added_races": 0,
+            "added_relationships": 0
         }
+        
+        try:
+            # 문서에서 엔티티 추출
+            entities = self.extract_entities_from_document(document)
+            
+            # 캐릭터 추가
+            for character in entities.get("characters", []):
+                try:
+                    # Neo4j 트랜잭션으로 캐릭터 추가 (없으면)
+                    with self.kg.driver.session() as session:
+                        result = session.run(
+                            """
+                            MERGE (c:Character {name: $name})
+                            RETURN count(c) as count
+                            """,
+                            name=character
+                        )
+                        count = result.single()["count"]
+                        if count == 1:
+                            stats["added_characters"] += 1
+                except Exception as e:
+                    self.logger.error(f"캐릭터 추가 오류 ({character}): {e}")
+            
+            # 장소 추가
+            for location in entities.get("locations", []):
+                try:
+                    # Neo4j 트랜잭션으로 장소 추가 (없으면)
+                    with self.kg.driver.session() as session:
+                        result = session.run(
+                            """
+                            MERGE (l:Location {name: $name})
+                            RETURN count(l) as count
+                            """,
+                            name=location
+                        )
+                        count = result.single()["count"]
+                        if count == 1:
+                            stats["added_locations"] += 1
+                except Exception as e:
+                    self.logger.error(f"장소 추가 오류 ({location}): {e}")
+            
+            # 종족 추가
+            for race in entities.get("races", []):
+                try:
+                    # Neo4j 트랜잭션으로 종족 추가 (없으면)
+                    with self.kg.driver.session() as session:
+                        result = session.run(
+                            """
+                            MERGE (r:Race {name: $name})
+                            RETURN count(r) as count
+                            """,
+                            name=race
+                        )
+                        count = result.single()["count"]
+                        if count == 1:
+                            stats["added_races"] += 1
+                except Exception as e:
+                    self.logger.error(f"종족 추가 오류 ({race}): {e}")
+            
+            # 관계 유형 매핑
+            relationship_types = {
+                "신뢰": "TRUSTS",
+                "우호적": "FRIENDLY_WITH",
+                "중립": "NEUTRAL_WITH",
+                "적대적": "HOSTILE_WITH",
+                "증오": "HATES",
+                "trust": "TRUSTS",
+                "friendly": "FRIENDLY_WITH",
+                "neutral": "NEUTRAL_WITH",
+                "hostile": "HOSTILE_WITH",
+                "hatred": "HATES"
+            }
+            
+            # 캐릭터 간 관계 추가
+            for char1, relations in entities.get("relationships", {}).items():
+                for char2, rel_type in relations.items():
+                    try:
+                        # 관계 유형 매핑
+                        neo4j_rel_type = relationship_types.get(rel_type.lower(), "RELATED_TO")
+                        
+                        # Neo4j 트랜잭션으로 관계 추가 (없으면)
+                        with self.kg.driver.session() as session:
+                            result = session.run(
+                                f"""
+                                MATCH (c1:Character {{name: $char1}}), (c2:Character {{name: $char2}})
+                                MERGE (c1)-[r:{neo4j_rel_type}]->(c2)
+                                RETURN count(r) as count
+                                """,
+                                char1=char1,
+                                char2=char2
+                            )
+                            count = result.single()["count"]
+                            if count == 1:
+                                stats["added_relationships"] += 1
+                    except Exception as e:
+                        self.logger.error(f"관계 추가 오류 ({char1}->{char2}): {e}")
+            
+            self.logger.info(f"그래프 업데이트 완료: {stats}")
+            return stats
+            
+        except Exception as e:
+            self.logger.error(f"그래프 업데이트 오류: {e}")
+            raise

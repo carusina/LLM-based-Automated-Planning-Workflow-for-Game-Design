@@ -1,568 +1,681 @@
-# models/game_design_generator.py
-from typing import Dict, List, Any, Optional, Union
-from models.llm_service import LLMService
+"""
+game_design_generator.py
+
+Game Design Document (GDD) 생성 모듈
+- 템플릿을 기반으로 프롬프트 구성
+- 캐릭터 관계(신뢰·우호적·중립·적대적·증오) 포함
+- LLM을 사용하여 완성된 GDD 생성
+"""
+
+import os
 import json
+import logging
+import re
+from typing import Dict, List, Any, Optional
+from pathlib import Path
+
+from .llm_service import LLMService
 
 class GameDesignGenerator:
-    """LLM을 사용하여 게임 기획 요소를 생성하는 클래스"""
+    """
+    게임 디자인 문서(GDD) 생성기
     
-    def __init__(self, llm_service: LLMService):
+    사용자 입력 기반으로 LLM에 프롬프트를 구성해 GDD를 생성합니다.
+    GDD는 표준 템플릿을 사용하며, Narrative Overview 섹션에는
+    캐릭터 간 관계(신뢰·우호적·중립·적대적·증오)가 포함됩니다.
+    """
+
+    def __init__(
+        self,
+        llm_service: LLMService = None,
+        template_dir: str = None
+    ) -> None:
         """
-        게임 기획 생성기 초기화
+        GDD 생성기 초기화
         
         Args:
-            llm_service: LLM 서비스 인스턴스
+            llm_service (LLMService, optional): LLM 서비스 인스턴스
+            template_dir (str, optional): 템플릿 디렉토리 경로
         """
-        self.llm_service = llm_service
+        # LLM 서비스 설정
+        self.llm = llm_service or LLMService()
+
+        # 템플릿 디렉토리 설정 (상대 경로 사용)
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        self.template_dir = template_dir or os.path.join(base_dir, 'templates')
+
+        # 로깅 설정
+        logging.basicConfig(level=logging.INFO)
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.info(f"Template directory set to: {self.template_dir}")
+
+    def load_template(self) -> str:
+        """
+        GDD.md 템플릿 파일 로드
         
-    def generate_game_concept(self, 
-                             initial_concept: str, 
-                             genre: str = None, 
-                             target_audience: str = None) -> Dict[str, Any]:
+        Returns:
+            str: 템플릿 내용
+            
+        Raises:
+            FileNotFoundError: 템플릿 파일이 없는 경우
         """
-        게임 컨셉을 생성하거나 개선
+        template_path = os.path.join(self.template_dir, 'GDD.md')
+        if not os.path.isfile(template_path):
+            self.logger.error(f"GDD template not found at {template_path}")
+            raise FileNotFoundError(f"Template not found: {template_path}")
+
+        with open(template_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        self.logger.debug("Loaded GDD template successfully.")
+        return content
+
+    def build_prompt(
+        self,
+        idea: str,
+        genre: str,
+        target: str,
+        concept: str
+    ) -> str:
+        """
+        LLM에 전달할 프롬프트 구성
         
         Args:
-            initial_concept: 초기 게임 컨셉 아이디어
-            genre: 게임 장르 (선택 사항)
-            target_audience: 타겟 사용자층 (선택 사항)
+            idea (str): 게임 아이디어 설명
+            genre (str): 게임 장르
+            target (str): 타겟 오디언스
+            concept (str): 게임 컨셉
             
         Returns:
-            확장된 게임 컨셉 정보
+            str: 완성된 프롬프트
         """
-        # 출력 스키마 정의
-        output_schema = {
-            "title": "게임 제목",
-            "high_concept": "한 줄 설명",
-            "extended_concept": "확장된 개념 설명 (3-5문장)",
-            "unique_selling_points": ["차별화 포인트 1", "차별화 포인트 2"],
-            "target_audience": "타겟 사용자층",
-            "genre": "주요 장르",
-            "subgenres": ["서브 장르 1", "서브 장르 2"],
-            "mood": "게임의 분위기/감성",
-            "visual_style": "시각적 스타일 설명"
-        }
+        self.logger.info("Building prompt for GDD generation...")
+        template = self.load_template()
+
+        # 관계 타입 예시를 추가한 프롬프트 구성
+        relationship_example = """
+        **예시**  
+        아린: 어린 시절부터 주인공과 함께 자란 친구로, 현재는 왕국 근위대의 핵심 기사. 강한 책임감과 따뜻한 인간미를 지님.  
+        플레이어와의 관계: 신뢰  
+         
+        로그란: 폐허에서 은둔하며 살아가는 도적단 리더. 과묵하고 냉정하지만, 약자를 돕는 의리가 있음.  
+        플레이어와의 관계: 중립  
         
+        엘리아: 고대 마법서 연구에 집착하는 학자. 자신의 목표를 위해 수단과 방법을 가리지 않음.  
+        플레이어와의 관계: 적대적  
+        
+        모르간: 어둠의 세력에 속한 마법사로, 주인공의 가족을 앗아간 원흉. 무자비하고 냉혹함.  
+        플레이어와의 관계: 증오  
+        """
+
+        # 레벨 예시를 추가한 프롬프트 구성
+        level_example = """
+        1) Level List & Unique Features
+        * Ancient Forest Entrance
+        테마 & 배경 스토리: 주인공이 잃어버린 동료 단서를 찾기 위해 처음 발을 들이는 신비로운 숲 입구  
+        분위기 & 아트 디렉션: 울창한 나무, 짙은 녹색 톤, 부드러운 빛줄기와 안개 효과  
+        핵심 메커니즘 & 고유 특징:  
+        - 점프 퍼즐 플랫폼  
+        - 스파이크 함정  
+        - 흔들리는 나무 다리  
+        재미 요소:  
+        - 나뭇잎 사이로 보이는 숨겨진 보물 상자  
+        - 점프할 때마다 울리는 나뭇잎 사운드  
+
+        * Desert Ruins Labyrinth
+        테마 & 배경 스토리: 오래 전 사라진 왕국의 유적, 모래 폭풍으로 부분 매몰된 미로  
+        분위기 & 아트 디렉션: 따뜻한 황토색·주황빛 하늘, 부서진 석조 문양  
+        핵심 메커니즘 & 고유 특징:  
+        - 모래 흘러내림 퍼즐(시간 제한)  
+        - 숨겨진 함정 문  
+        - 낙사지대 슬라이딩 구간  
+        재미 요소:  
+        - 함정 문 뒤의 비밀 보상 방  
+        - 폭풍 속에서만 나타나는 환영 적  
+
+        * Frost Peak Summit
+        테마 & 배경 스토리: 영웅이 첫 보스를 마주하기 전 마지막 관문, 눈보라가 몰아치는 설산 정상  
+        분위기 & 아트 디렉션: 차가운 청색·흰색 조화, 강한 바람과 눈발 효과  
+        핵심 메커니즘 & 고유 특징:  
+        - 미끄러운 얼음 바닥  
+        - 한랭 대미지 구역(체온 게이지)  
+        - 얼음 기둥 올라타기 퍼즐  
+        재미 요소:  
+        - 얼음 속 숨겨진 고대 유물  
+        - 눈보라 속서 희미하게 보이는 길 표시  
+
+        2) Difficulty Curve & Balancing
+        * Ancient Forest Entrance
+        난이도 진행 형태:  
+        - 초반: 기본 점프·이동 튜토리얼 (쉬움)  
+        - 중반: 타이밍 점프 도전 (보통)  
+        - 후반: 스파이크 함정 + 이동 플랫폼 조합 (어려움)  
+        밸런싱 고려사항:  
+        - 튜토리얼 구간 직후 회복 포인트 배치  
+        - 첫 클리어 보상으로 추가 경험치 제공  
+        - 플랫폼 간격은 플레이어 기본 점프력에 맞춰 조정  
+
+        * Desert Ruins Labyrinth
+        난이도 진행 형태:  
+        - 초반: 모래 미로 탐색(보통)  
+        - 중반: 시간 제한 모래 흘러내림 퍼즐(어려움)  
+        - 후반: 함정 문+낙사지대 조합(상당히 어려움)  
+        밸런싱 고려사항:  
+        - 각 퍼즐 구간 전 간단한 힌트 오브젝트 배치  
+        - 모래 미로 중간 회복 아이템 배치  
+        - 재도전 시 퍼즐 난이도 소폭 완화  
+
+        * Frost Peak Summit
+        난이도 진행 형태:  
+        - 초반: 얼음 바닥 적응 구간 (보통)  
+        - 중반: 얼음 기둥 퍼즐 + 체온 관리 (어려움)  
+        - 후반: 눈보라 보스 전투 (매우 어려움)  
+        밸런싱 고려사항:  
+        - 체온 게이지 회복 포인트 배치  
+        - 보스 전투 전 최종 회복 지점 마련  
+        - 첫 클리어 보상으로 special 아이템(방한 장비) 제공 
+        """
+
         # 프롬프트 구성
-        prompt_parts = [
-            "다음 초기 게임 컨셉을 바탕으로 확장된 게임 컨셉 정보를 생성해주세요:",
-            f"초기 컨셉: {initial_concept}"
+        parts = [
+            "당신은 전문 게임 디자이너입니다. 창의적이고 구체적인 게임 기획을 작성해 주세요.",
+            "모든 내용은 한국어로 생성해주세요.",
+            "아래 파라미터를 기반으로 포괄적인 게임 디자인 문서(GDD)를 생성해주세요.",
+            "Narrative Overview의 Main Characters & Relationships에는 등장 캐릭터와 각 캐릭터의 소개를 생성해주세요.(캐릭터 3개 이상)",
+            "또한 각 캐릭터마다 플레이어와의 관계 유형(신뢰, 우호적, 중립, 적대적, 증오 중 하나)을 반드시 명시해주세요.",
+            "아래는 Main Characters & Relationships 예시입니다. 꼭 참고해서 비슷한 형식으로 생성해주세요.",
+            relationship_example,
+            "아래는 Level Design의 예시입니다. 꼭 참고해서 비슷한 형식으로 생성해주세요. (Level 3개 이상)",
+            level_example,
+            f"게임 아이디어: {idea}",
+            f"장르: {genre}",
+            f"타겟 오디언스: {target}",
+            f"컨셉: {concept}",
+            "다음 템플릿을 꼭 사용해주세요:",
+            template,
+            "템플릿에 있는 모든 내용을 작성해주세요."
+        ]
+        prompt = "\n\n".join(parts)
+        self.logger.debug(f"Prompt preview:\n{prompt[:200]}...")
+        return prompt
+
+    def extract_gdd_core(self, gdd_text: str) -> str:
+        """
+        GDD에서 스토리라인 생성에 필요한 핵심 요소 추출
+        
+        Args:
+            gdd_text (str): 생성된 GDD 전체 텍스트
+            
+        Returns:
+            str: 핵심 섹션들만 추출한 텍스트
+        """
+        core_sections = [
+            "1. Project Overview",
+            "3. Narrative Overview",
+            "4. Gameplay Description",
+            "5. Game Play Outline",
+            "6. Key Features",
+            "7. Mechanics Design",
+            "9. Level Design"
         ]
         
-        if genre:
-            prompt_parts.append(f"장르: {genre}")
+        core_content = []
+        lines = gdd_text.split('\n')
         
-        if target_audience:
-            prompt_parts.append(f"타겟 사용자층: {target_audience}")
+        # Cover Page는 항상 포함
+        cover_content = []
+        in_cover = True
         
-        prompt_parts.append("\n창의적이고 독창적인 게임 컨셉을 개발해주세요. 기존 게임들과 차별화된 요소를 포함하되, 실현 가능한 범위 내에서 제안해주세요.")
+        current_section = ""
+        is_core_section = False
         
-        prompt = "\n".join(prompt_parts)
-        
-        # LLM을 사용하여 게임 컨셉 생성
-        return self.llm_service.generate_structured_output(prompt, output_schema)
-    
-    def generate_gameplay_mechanics(self, 
-                                   game_concept: Dict[str, Any], 
-                                   complexity_level: str = "중간") -> Dict[str, Any]:
+        for line in lines:
+            # 섹션 헤더 확인
+            if re.match(r'^[0-9]+\.', line.strip()):
+                # 새로운 섹션 시작
+                in_cover = False
+                current_section = line.strip()
+                is_core_section = any(section in current_section for section in core_sections)
+                
+                if is_core_section:
+                    core_content.append(line)
+                continue
+            
+            # 커버 페이지 내용 수집
+            if in_cover:
+                cover_content.append(line)
+                continue
+                
+            # 핵심 섹션 내용 추가
+            if is_core_section:
+                core_content.append(line)
+                
+        # 커버 페이지와 핵심 섹션 내용 결합
+        result = '\n'.join(cover_content + ['\n'] + core_content)
+        return result
+
+    def extract_character_relationships(self, gdd_text: str) -> Dict[str, Dict[str, str]]:
         """
-        게임 플레이 메커니즘 생성
+        GDD에서 캐릭터 간 관계 정보 추출
         
         Args:
-            game_concept: 게임 컨셉 정보
-            complexity_level: 게임플레이 복잡도 수준 ("낮음", "중간", "높음")
+            gdd_text (str): 생성된 GDD 전체 텍스트
             
         Returns:
-            게임플레이 메커니즘 정보
+            Dict[str, Dict[str, str]]: 캐릭터 관계 정보
         """
-        # 출력 스키마 정의
-        output_schema = {
-            "core_gameplay_loop": "핵심 게임플레이 루프 설명",
-            "player_actions": ["주요 플레이어 액션 1", "주요 플레이어 액션 2"],
-            "progression_system": "게임 진행/성장 시스템 설명",
-            "challenge_types": ["도전 유형 1", "도전 유형 2"],
-            "reward_systems": ["보상 시스템 1", "보상 시스템 2"],
-            "game_modes": ["게임 모드 1", "게임 모드 2"],
-            "unique_mechanics": ["독특한 메커닉 1", "독특한 메커닉 2"],
-            "complexity_assessment": "복잡도 평가 및 접근성"
-        }
+        relationships: Dict[str, Dict[str, str]] = {}
         
-        # 게임 컨셉에서 필요한 정보 추출
-        concept_str = f"게임 제목: {game_concept.get('title', '제목 미정')}\n"
-        concept_str += f"컨셉: {game_concept.get('high_concept', '')}\n"
-        concept_str += f"장르: {game_concept.get('genre', '')}\n"
-        concept_str += f"타겟 사용자층: {game_concept.get('target_audience', '')}"
-        
-        # 프롬프트 구성
-        prompt = f"""다음 게임 컨셉을 바탕으로 게임플레이 메커니즘을 개발해주세요:
+        try:
+            # 여러 패턴으로 Narrative Overview 섹션 찾기
+            narrative_section = ""
+            narrative_patterns = [
+                r'(?s)\*\*3\.\s*Narrative Overview\*\*(.*?)(?=\*\*4\.)',
+                r'(?s)3\.\s*Narrative Overview(.*?)(?=4\.)',
+                r'(?s)Narrative Overview(.*?)Gameplay Description'
+            ]
+            
+            for pattern in narrative_patterns:
+                nav_match = re.search(pattern, gdd_text)
+                if nav_match:
+                    narrative_section = nav_match.group(1)
+                    break
+                    
+            if not narrative_section:
+                self.logger.warning("Narrative Overview 섹션을 찾을 수 없습니다.")
+                return relationships
+                
+            # 여러 패턴으로 캐릭터 정보 섹션 찾기
+            character_section = ""
+            character_section_patterns = [
+                r'(?s)\* Main Characters\s*\n?& Relationships:(.*?)(?=\* World Lore)',
+                r'(?s)Main Characters\s*&\s*Relationships:(.*?)(?=World Lore)',
+                r'(?s)Main Characters:(.*?)(?=World Lore)',
+                r'(?s)Characters\s*&\s*Relationships:(.*?)(?=World)'
+            ]
+            
+            for pattern in character_section_patterns:
+                char_match = re.search(pattern, narrative_section)
+                if char_match:
+                    character_section = char_match.group(1)
+                    break
+                    
+            if not character_section:
+                self.logger.warning("Characters & Relationships 섹션을 찾을 수 없습니다.")
+                return relationships
+                
+            # 캐릭터 정보 추출
+            # 여러 가지 캐릭터 정의 패턴 처리
+            character_patterns = [
+                r'(?m)^\s*\*\s*([^:]+?):\s*(.*?)$',       # * 캐릭터명: 설명
+                r'(?m)^\s*-\s*\*\*([^:]+):\*\*\s*(.*?)$', # - **캐릭터명:** 설명
+                r'(?m)^\s*\*\*([^:]+):\*\*\s*(.*?)$',     # **캐릭터명:** 설명
+                r'(?m)^\s*([^:]+?):\s*(.*?)$'             # 캐릭터명: 설명
+            ]
+            
+            # 관계 패턴 처리
+            relation_patterns = [
+                r'(?m)^\s*플레이어와의\s*관계:\s*(\S+)',   # 플레이어와의 관계: 타입
+                r'(?m)플레이어와의\s*관계:\s*(\S+)',       # 플레이어와의 관계: 타입
+                r'관계:\s*(\S+)'                          # 관계: 타입
+            ]
+            
+            # 캐릭터 정보 추출
+            characters = []
+            character_blocks = {}
+            
+            # 캐릭터 블록 구분하기 (각 캐릭터당 설명+관계 정보)
+            for pattern in character_patterns:
+                matches = list(re.finditer(pattern, character_section))
+                if matches:
+                    # 각 캐릭터 정보와 다음 캐릭터 정보 사이의 모든 텍스트 추출
+                    for i, match in enumerate(matches):
+                        char_name = match.group(1).strip()
+                        start = match.start()
+                        end = len(character_section)
+                        
+                        # 다음 캐릭터 정보가 있으면 여기까지만 추출
+                        if i < len(matches) - 1:
+                            end = matches[i+1].start()
+                            
+                        character_blocks[char_name] = character_section[start:end]
+                        characters.append(char_name)
+                        
+                    # 캐릭터 정보를 찾았으면 종료
+                    if characters:
+                        break
+            
+            # 각 캐릭터의 관계 정보 추출
+            for char_name in characters:
+                if char_name in ["World Lore", "Story Branching", "Synopsis"]:
+                    continue
+                    
+                relationships[char_name] = {}
+                char_block = character_blocks.get(char_name, "")
+                
+                # 관계 정보 찾기
+                for pattern in relation_patterns:
+                    rel_match = re.search(pattern, char_block)
+                    if rel_match:
+                        rel_type = rel_match.group(1).strip()
+                        relationships[char_name]['플레이어'] = rel_type
+                        break
+            
+            self.logger.info(f"추출된 캐릭터 관계: {relationships}")
+            return relationships
+            
+        except Exception as e:
+            self.logger.error(f"캐릭터 관계 추출 중 오류 발생: {e}")
+            return relationships
 
-{concept_str}
-
-복잡도 수준: {complexity_level}
-
-게임 메커니즘은 다음 요소를 포함해야 합니다:
-1. 핵심 게임플레이 루프 - 플레이어가 반복적으로 수행하는 핵심 활동
-2. 주요 플레이어 액션 - 플레이어가 수행할 수 있는 주요 행동들
-3. 진행/성장 시스템 - 플레이어 또는 캐릭터의 성장 방식
-4. 도전 요소 - 플레이어가 극복해야 할 도전 과제들
-5. 보상 시스템 - 플레이어에게 제공되는 보상 방식
-6. 게임 모드 - 다양한 플레이 방식 (싱글플레이어, 멀티플레이어 등)
-7. 독특한 메커닉 - 이 게임만의 차별화된 게임플레이 요소
-
-해당 장르의 관습을 참고하되, 창의적이고 혁신적인 요소를 포함하세요. 플레이어 경험을 최우선으로 고려하여 재미있고 매력적인 게임플레이를 설계해주세요."""
-        
-        # LLM을 사용하여 게임플레이 메커니즘 생성
-        return self.llm_service.generate_structured_output(prompt, output_schema)
-    
-    def generate_narrative_elements(self, 
-                                  game_concept: Dict[str, Any],
-                                  gameplay_mechanics: Dict[str, Any] = None) -> Dict[str, Any]:
+    def extract_level_design(self, gdd_text: str) -> List[Dict[str, Any]]:
         """
-        게임의 내러티브 요소 생성
+        GDD에서 레벨 디자인 정보 추출
         
         Args:
-            game_concept: 게임 컨셉 정보
-            gameplay_mechanics: 게임플레이 메커니즘 정보 (선택 사항)
+            gdd_text (str): 생성된 GDD 전체 텍스트
             
         Returns:
-            내러티브 요소 정보
+            List[Dict[str, Any]]: 레벨 디자인 정보 리스트
         """
-        # 출력 스키마 정의
-        output_schema = {
-            "setting": "게임 세계관 설명",
-            "background_lore": "배경 스토리/역사",
-            "main_plot": "주요 스토리 라인",
-            "plot_structure": "스토리 구조 (3막 구조 등)",
-            "themes": ["주요 테마 1", "주요 테마 2"],
-            "characters": [
-                {
-                    "name": "캐릭터명",
-                    "role": "역할",
-                    "background": "배경",
-                    "motivation": "동기",
-                    "arc": "캐릭터 아크"
+        levels = []
+        
+        try:
+            # 여러 패턴으로 Level Design 섹션 찾기
+            level_design_section = ""
+            level_design_patterns = [
+                r'(?s)\*\*9\.\s*Level Design\*\*(.*?)(?=\*\*10\.)',
+                r'(?s)9\.\s*Level Design(.*?)(?=10\.)',
+                r'(?s)Level Design(.*?)UI/UX Design'
+            ]
+            
+            for pattern in level_design_patterns:
+                ld_match = re.search(pattern, gdd_text)
+                if ld_match:
+                    level_design_section = ld_match.group(1)
+                    break
+                    
+            if not level_design_section:
+                self.logger.warning("Level Design 섹션을 찾을 수 없습니다.")
+                return levels
+                
+            # 1. Level List & Unique Features 블록 추출
+            level_list_section = ""
+            level_list_patterns = [
+                r'(?s)1\)\s*Level List\s*&\s*Unique Features(.*?)(?=2\))',
+                r'(?s)1\.\s*Level List\s*&\s*Unique Features(.*?)(?=2\.)',
+                r'(?s)Level List\s*&\s*Unique Features(.*?)Difficulty'
+            ]
+            
+            for pattern in level_list_patterns:
+                list_match = re.search(pattern, level_design_section)
+                if list_match:
+                    level_list_section = list_match.group(1)
+                    break
+                    
+            if not level_list_section:
+                self.logger.warning("Level List & Unique Features 섹션을 찾을 수 없습니다.")
+                return levels
+                
+            # 2. Difficulty Curve & Balancing 블록 추출
+            difficulty_section = ""
+            difficulty_patterns = [
+                r'(?s)2\)\s*Difficulty Curve\s*&\s*Balancing(.*)',
+                r'(?s)2\.\s*Difficulty Curve\s*&\s*Balancing(.*)',
+                r'(?s)Difficulty Curve\s*&\s*Balancing(.*)'
+            ]
+            
+            for pattern in difficulty_patterns:
+                diff_match = re.search(pattern, level_design_section)
+                if diff_match:
+                    difficulty_section = diff_match.group(1)
+                    break
+                    
+            # 레벨 이름 추출
+            level_names = []
+            
+            # 여러 패턴으로 레벨 이름 찾기
+            level_name_patterns = [
+                r'\*\s+[""]?([^"\n:]+?)[""]?(?=\s+테마|\s+Theme|\s+분위기)',  # * 레벨명 테마
+                r'\*\s+[""]?([^"\n:]+?)[""]?',                              # * 레벨명
+            ]
+            
+            for pattern in level_name_patterns:
+                matches = re.findall(pattern, level_list_section)
+                if matches:
+                    level_names = [name.strip() for name in matches if name.strip() and 
+                                not name.startswith("Level List") and 
+                                not name.startswith("Difficulty")]
+                    break
+                    
+            if not level_names:
+                self.logger.warning("레벨 이름을 추출할 수 없습니다.")
+                return levels
+                
+            self.logger.info(f"발견된 레벨 이름: {level_names}")
+            
+            # 레벨별 정보 추출
+            for level_name in level_names:
+                level_info = {
+                    "name": level_name,
+                    "theme": "",
+                    "atmosphere": "",
+                    "mechanics": [],
+                    "fun_elements": [],
+                    "difficulty": {
+                        "early": "",
+                        "mid": "",
+                        "late": ""
+                    },
+                    "balancing": []
                 }
-            ],
-            "narrative_devices": ["내러티브 장치 1", "내러티브 장치 2"],
-            "player_agency": "플레이어의 선택/분기점",
-            "integration_with_gameplay": "게임플레이와 내러티브 통합 방식"
-        }
-        
-        # 게임 컨셉에서 필요한 정보 추출
-        concept_str = f"게임 제목: {game_concept.get('title', '제목 미정')}\n"
-        concept_str += f"컨셉: {game_concept.get('high_concept', '')}\n"
-        concept_str += f"장르: {game_concept.get('genre', '')}\n"
-        concept_str += f"분위기: {game_concept.get('mood', '')}"
-        
-        # 게임플레이 메커니즘 정보가 있으면 추가
-        mechanics_str = ""
-        if gameplay_mechanics:
-            mechanics_str = f"\n\n게임플레이 메커니즘:\n"
-            mechanics_str += f"- 핵심 루프: {gameplay_mechanics.get('core_gameplay_loop', '')}\n"
-            mechanics_str += f"- 진행 시스템: {gameplay_mechanics.get('progression_system', '')}"
-        
-        # 프롬프트 구성
-        prompt = f"""다음 게임 컨셉을 바탕으로 매력적인 내러티브 요소를 개발해주세요:
+                
+                # 레벨 내용 추출
+                level_content = ""
+                level_content_patterns = [
+                    f'\\*\\s+{re.escape(level_name)}[^\\n]*\\n([^\\*]+)',
+                    f'{re.escape(level_name)}[^\\n]*\\n([^\\*]+)'
+                ]
+                
+                for pattern in level_content_patterns:
+                    level_match = re.search(pattern, level_list_section, re.DOTALL)
+                    if level_match:
+                        level_content = level_match.group(1)
+                        break
+                        
+                if level_content:
+                    # 테마 추출
+                    theme_patterns = [
+                        r'(?:테마|Theme)\s*&\s*(?:배경\s*스토리|Background\s*Story)[^:]*:\s*([^\n]+)',
+                        r'테마[^:]*:\s*([^\n]+)',
+                    ]
+                    
+                    for pattern in theme_patterns:
+                        theme_match = re.search(pattern, level_content, re.IGNORECASE)
+                        if theme_match:
+                            level_info["theme"] = theme_match.group(1).strip()
+                            break
+                    
+                    # 분위기 추출
+                    atmosphere_patterns = [
+                        r'(?:분위기|Atmosphere)\s*&\s*(?:아트\s*디렉션|Art\s*Direction)[^:]*:\s*([^\n]+)',
+                        r'분위기[^:]*:\s*([^\n]+)',
+                    ]
+                    
+                    for pattern in atmosphere_patterns:
+                        atmosphere_match = re.search(pattern, level_content, re.IGNORECASE)
+                        if atmosphere_match:
+                            level_info["atmosphere"] = atmosphere_match.group(1).strip()
+                            break
+                    
+                    # 핵심 메커니즘 추출
+                    mechanics_patterns = [
+                        r'(?:핵심\s*메커니즘|Core\s*Mechanic)[^:]*:[^-]*((?:-[^\n]+\n)+)',
+                        r'메커니즘[^:]*:[^-]*((?:-[^\n]+\n)+)',
+                    ]
+                    
+                    for pattern in mechanics_patterns:
+                        mechanics_match = re.search(pattern, level_content, re.IGNORECASE | re.DOTALL)
+                        if mechanics_match:
+                            mechanics_text = mechanics_match.group(1)
+                            mechanics = []
+                            for line in mechanics_text.split('\n'):
+                                line = line.strip()
+                                if line.startswith('-'):
+                                    mechanics.append(line[1:].strip())
+                            if mechanics:
+                                level_info["mechanics"] = mechanics
+                            break
+                    
+                    # 재미 요소 추출
+                    fun_patterns = [
+                        r'(?:재미\s*요소|Fun\s*Elements)[^:]*:[^-]*((?:-[^\n]+\n)+)',
+                        r'재미[^:]*:[^-]*((?:-[^\n]+\n)+)',
+                    ]
+                    
+                    for pattern in fun_patterns:
+                        fun_match = re.search(pattern, level_content, re.IGNORECASE | re.DOTALL)
+                        if fun_match:
+                            fun_text = fun_match.group(1)
+                            fun_elements = []
+                            for line in fun_text.split('\n'):
+                                line = line.strip()
+                                if line.startswith('-'):
+                                    fun_elements.append(line[1:].strip())
+                            if fun_elements:
+                                level_info["fun_elements"] = fun_elements
+                            break
+                
+                # 난이도 정보 추출
+                if difficulty_section:
+                    # 레벨별 난이도 블록 찾기
+                    level_diff_content = ""
+                    level_diff_patterns = [
+                        f'\\*\\s+{re.escape(level_name)}[^\\n]*\\n([^\\*]+)',
+                        f'{re.escape(level_name)}[^\\n]*\\n([^\\*]+)'
+                    ]
+                    
+                    for pattern in level_diff_patterns:
+                        level_diff_match = re.search(pattern, difficulty_section, re.DOTALL)
+                        if level_diff_match:
+                            level_diff_content = level_diff_match.group(1)
+                            break
+                            
+                    if level_diff_content:
+                        # 난이도 진행 형태 추출
+                        diff_progress_patterns = [
+                            r'난이도\s*진행\s*형태[^:]*:((?:[^\n]*\n)*?)',
+                            r'난이도[^:]*:((?:[^\n]*\n)*?)',
+                        ]
+                        
+                        for pattern in diff_progress_patterns:
+                            diff_progress_match = re.search(pattern, level_diff_content, re.IGNORECASE | re.DOTALL)
+                            if diff_progress_match:
+                                progress_text = diff_progress_match.group(1)
+                                
+                                # 초반, 중반, 후반 난이도 추출
+                                difficulty_parts = [
+                                    ("early", [r'-\s*초반[^:]*:\s*([^\n]+)', r'초반[^:]*:\s*([^\n]+)']),
+                                    ("mid", [r'-\s*중반[^:]*:\s*([^\n]+)', r'중반[^:]*:\s*([^\n]+)']),
+                                    ("late", [r'-\s*후반[^:]*:\s*([^\n]+)', r'후반[^:]*:\s*([^\n]+)'])
+                                ]
+                                
+                                for part_key, part_patterns in difficulty_parts:
+                                    for pattern in part_patterns:
+                                        part_match = re.search(pattern, progress_text)
+                                        if part_match:
+                                            level_info["difficulty"][part_key] = part_match.group(1).strip()
+                                            break
+                                
+                                break
+                        
+                        # 밸런싱 고려사항 추출
+                        balancing_patterns = [
+                            r'밸런싱\s*고려사항[^:]*:((?:[^\n]*\n)*?)',
+                            r'밸런싱[^:]*:((?:[^\n]*\n)*?)',
+                        ]
+                        
+                        for pattern in balancing_patterns:
+                            balancing_match = re.search(pattern, level_diff_content, re.IGNORECASE | re.DOTALL)
+                            if balancing_match:
+                                balancing_text = balancing_match.group(1)
+                                balancing_items = []
+                                for line in balancing_text.split('\n'):
+                                    line = line.strip()
+                                    if line.startswith('-'):
+                                        balancing_items.append(line[1:].strip())
+                                if balancing_items:
+                                    level_info["balancing"] = balancing_items
+                                break
+                
+                # 유효한 레벨 정보인지 확인 (최소한 이름은 있어야 함)
+                if level_info["name"]:
+                    levels.append(level_info)
+                    self.logger.info(f"레벨 '{level_name}' 정보 추출 완료")
+            
+            self.logger.info(f"총 {len(levels)}개 레벨 디자인 정보 추출 완료")
+            return levels
+            
+        except Exception as e:
+            self.logger.error(f"레벨 디자인 추출 중 오류 발생: {e}")
+            return levels
 
-{concept_str}{mechanics_str}
-
-다음 요소를 포함한 풍부하고 몰입감 있는 내러티브를 설계해주세요:
-1. 세계관과 배경 - 게임이 펼쳐지는 세계의 설정
-2. 주요 스토리 라인 - 게임의 전체적인 이야기 흐름
-3. 캐릭터 - 주요 캐릭터들의 배경, 동기, 성장 과정
-4. 주요 테마 - 게임이 탐구하는 핵심 주제
-5. 내러티브 장치 - 스토리텔링을 위한 방법론
-6. 플레이어 선택 - 플레이어가 스토리에 영향을 미치는 방식
-
-게임플레이와 내러티브 간의 조화를 고려하되, 장르에 적합한 내러티브를 구성해주세요. 플레이어가 스토리에 몰입할 수 있도록 매력적이고 흥미로운 내러티브를 제안해주세요."""
-        
-        # LLM을 사용하여 내러티브 요소 생성
-        return self.llm_service.generate_structured_output(prompt, output_schema)
-    
-    def generate_art_direction(self, 
-                             game_concept: Dict[str, Any],
-                             narrative_elements: Dict[str, Any] = None) -> Dict[str, Any]:
+    def generate_gdd(
+        self,
+        idea: str,
+        genre: str,
+        target: str,
+        concept: str,
+        temperature: float = 0.7,
+        max_tokens: int = 4096
+    ) -> Dict[str, Any]:
         """
-        게임의 아트 디렉션 생성
+        LLM을 사용하여 GDD 생성
         
         Args:
-            game_concept: 게임 컨셉 정보
-            narrative_elements: 내러티브 요소 정보 (선택 사항)
+            idea (str): 게임 아이디어
+            genre (str): 게임 장르
+            target (str): 타겟 오디언스
+            concept (str): 게임 컨셉
+            temperature (float, optional): LLM 생성 온도 (창의성 조절)
+            max_tokens (int, optional): 최대 토큰 수
             
         Returns:
-            아트 디렉션 정보
-        """
-        # 출력 스키마 정의
-        output_schema = {
-            "visual_style": "시각적 스타일 (사실적, 스타일라이즈드, 픽셀 아트 등)",
-            "color_palette": "주요 색상 팔레트 설명",
-            "art_references": ["참고할 수 있는 아트 스타일/작품 1", "참고할 수 있는 아트 스타일/작품 2"],
-            "character_design": "캐릭터 디자인 방향",
-            "environment_design": "환경 디자인 방향",
-            "ui_design": "UI 디자인 방향",
-            "animation_style": "애니메이션 스타일",
-            "lighting": "조명 방식",
-            "sound_design": "사운드 디자인 방향",
-            "music_direction": "음악 방향"
-        }
-        
-        # 게임 컨셉에서 필요한 정보 추출
-        concept_str = f"게임 제목: {game_concept.get('title', '제목 미정')}\n"
-        concept_str += f"컨셉: {game_concept.get('high_concept', '')}\n"
-        concept_str += f"장르: {game_concept.get('genre', '')}\n"
-        concept_str += f"분위기: {game_concept.get('mood', '')}\n"
-        concept_str += f"시각적 스타일: {game_concept.get('visual_style', '')}"
-        
-        # 내러티브 요소 정보가 있으면 추가
-        narrative_str = ""
-        if narrative_elements:
-            narrative_str = f"\n\n내러티브 요소:\n"
-            narrative_str += f"- 세계관: {narrative_elements.get('setting', '')}\n"
-            narrative_str += f"- 테마: {', '.join(narrative_elements.get('themes', []))}"
-        
-        # 프롬프트 구성
-        prompt = f"""다음 게임 컨셉을 바탕으로 아트 디렉션을 개발해주세요:
-
-{concept_str}{narrative_str}
-
-다음 요소를 포함한 일관되고 매력적인 아트 디렉션을 설계해주세요:
-1. 시각적 스타일 - 전반적인 그래픽 스타일 (사실적, 스타일라이즈드, 픽셀 아트 등)
-2. 색상 팔레트 - 주요 색상과 그 의미/목적
-3. 참고 자료 - 영감을 얻을 수 있는 아트 스타일이나 작품
-4. 캐릭터 디자인 - 캐릭터의 시각적 스타일 방향
-5. 환경 디자인 - 게임 세계의 환경 디자인 방향
-6. UI 디자인 - 사용자 인터페이스 디자인 방향
-7. 애니메이션과 이펙트 - 움직임과 시각 효과 스타일
-8. 사운드와 음악 - 오디오 요소 방향
-
-게임의 분위기와 내러티브에 부합하면서도 기술적 제약을 고려한 아트 디렉션을 제안해주세요. 시각적 일관성과 독창성을 갖춘 스타일을 개발해주세요."""
-        
-        # LLM을 사용하여 아트 디렉션 생성
-        return self.llm_service.generate_structured_output(prompt, output_schema)
-    
-    def generate_monetization_plan(self, 
-                                 game_concept: Dict[str, Any],
-                                 gameplay_mechanics: Dict[str, Any] = None,
-                                 target_audience: str = None) -> Dict[str, Any]:
-        """
-        게임의 수익화 계획 생성
-        
-        Args:
-            game_concept: 게임 컨셉 정보
-            gameplay_mechanics: 게임플레이 메커니즘 정보 (선택 사항)
-            target_audience: 타겟 사용자층 (선택 사항)
-            
-        Returns:
-            수익화 계획 정보
-        """
-        # 출력 스키마 정의
-        output_schema = {
-            "monetization_model": "주요 수익화 모델 (프리미엄, F2P, 구독 등)",
-            "price_point": "가격 책정 (프리미엄의 경우)",
-            "in_app_purchases": "인앱 구매 항목 및 가격 전략",
-            "virtual_currency": "가상 화폐 시스템 (있는 경우)",
-            "battle_pass": "배틀패스/시즌패스 구조 (있는 경우)",
-            "advertising": "광고 전략 (있는 경우)",
-            "dlc_expansion": "DLC/확장팩 계획",
-            "subscription": "구독 모델 세부사항 (있는 경우)",
-            "player_retention_strategies": ["플레이어 유지 전략 1", "플레이어 유지 전략 2"],
-            "revenue_projections": "수익 예상 (대략적인 추정)",
-            "market_analysis": "시장 분석 및 경쟁 수익화 모델 비교"
-        }
-        
-        # 게임 컨셉에서 필요한 정보 추출
-        concept_str = f"게임 제목: {game_concept.get('title', '제목 미정')}\n"
-        concept_str += f"컨셉: {game_concept.get('high_concept', '')}\n"
-        concept_str += f"장르: {game_concept.get('genre', '')}"
-        
-        if target_audience:
-            concept_str += f"\n타겟 사용자층: {target_audience}"
-        elif 'target_audience' in game_concept:
-            concept_str += f"\n타겟 사용자층: {game_concept['target_audience']}"
-        
-        # 게임플레이 메커니즘 정보가 있으면 추가
-        mechanics_str = ""
-        if gameplay_mechanics:
-            mechanics_str = f"\n\n게임플레이 메커니즘:\n"
-            mechanics_str += f"- 핵심 루프: {gameplay_mechanics.get('core_gameplay_loop', '')}\n"
-            mechanics_str += f"- 진행 시스템: {gameplay_mechanics.get('progression_system', '')}\n"
-            mechanics_str += f"- 보상 시스템: {', '.join(gameplay_mechanics.get('reward_systems', []))}"
-        
-        # 프롬프트 구성
-        prompt = f"""다음 게임 컨셉을 바탕으로 수익화 계획을 개발해주세요:
-
-{concept_str}{mechanics_str}
-
-다음 요소를 포함한 현실적이고 지속 가능한 수익화 계획을 제안해주세요:
-1. 수익화 모델 - 주요 수익화 방식 (프리미엄, F2P, 구독 등)
-2. 가격 책정 - 적정 가격대 또는 인앱 구매 전략
-3. 추가 수익원 - DLC, 확장팩, 시즌패스 등
-4. 플레이어 유지 전략 - 장기적인 참여와 수익을 위한 전략
-5. 시장 분석 - 경쟁작들의 수익화 모델과 비교
-
-게임 경험을 저해하지 않으면서도 지속 가능한 수익을 창출할 수 있는 균형 잡힌 접근법을 제시해주세요. 타겟 사용자층의 특성과 선호도를 고려한 수익화 전략을 개발해주세요."""
-        
-        # LLM을 사용하여 수익화 계획 생성
-        return self.llm_service.generate_structured_output(prompt, output_schema)
-    
-    def analyze_competitor(self, competitor_name: str) -> Dict[str, Any]:
-        """
-        경쟁 게임 분석
-        
-        Args:
-            competitor_name: 분석할 경쟁 게임 이름
-            
-        Returns:
-            경쟁 게임 분석 정보
-        """
-        # 출력 스키마 정의
-        output_schema = {
-            "game_name": "게임 이름",
-            "developer": "개발사",
-            "publisher": "퍼블리셔",
-            "release_date": "출시일",
-            "platforms": ["플랫폼 1", "플랫폼 2"],
-            "genre": "장르",
-            "target_audience": "타겟 사용자층",
-            "key_features": ["주요 특징 1", "주요 특징 2"],
-            "gameplay_analysis": "게임플레이 분석",
-            "narrative_analysis": "내러티브 분석",
-            "art_style_analysis": "아트 스타일 분석",
-            "monetization_model": "수익화 모델",
-            "reception": {
-                "critic_score": "평론가 점수 (예: 메타크리틱)",
-                "user_score": "사용자 평점",
-                "sales_performance": "판매 실적 (가능한 경우)"
-            },
-            "strengths": ["강점 1", "강점 2"],
-            "weaknesses": ["약점 1", "약점 2"],
-            "lessons": ["배울 점 1", "배울 점 2"]
-        }
-        
-        # 프롬프트 구성
-        prompt = f"""다음 게임에 대한 상세한 경쟁 분석을 제공해주세요:
-
-게임 이름: {competitor_name}
-
-다음 요소를 포함한 철저하고 객관적인 분석을 수행해주세요:
-1. 게임 기본 정보 - 개발사, 퍼블리셔, 출시일, 플랫폼, 장르
-2. 주요 특징 - 게임의 핵심 기능 및 판매 포인트
-3. 게임플레이 분석 - 핵심 메커니즘, 난이도, 재미 요소
-4. 내러티브 분석 - 스토리텔링 접근법과 효과
-5. 아트 스타일 분석 - 시각적 디자인과 기술적 구현
-6. 수익화 모델 - 비즈니스 모델 및 수익 전략
-7. 시장 반응 - 비평가 및 사용자 평가, 판매 실적
-8. 강점과 약점 - 주목할 만한 성공 요소와 개선이 필요한 영역
-9. 배울 점 - 이 게임에서 얻을 수 있는 주요 교훈
-
-이 분석은 실제 게임 개발에 도움이 될 수 있도록 구체적이고 actionable한 인사이트를 제공해야 합니다. 객관적이고 균형 잡힌 평가를 제공해주세요."""
-        
-        # LLM을 사용하여 경쟁 게임 분석 생성
-        return self.llm_service.generate_structured_output(prompt, output_schema)
-    
-    def generate_specific_content(self, content_type: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        특정 게임 콘텐츠 생성
-        
-        Args:
-            content_type: 생성할 콘텐츠 유형 (character, level, item, quest 등)
-            parameters: 콘텐츠 생성을 위한 매개변수
-            
-        Returns:
-            생성된 콘텐츠 정보
-        """
-        # 콘텐츠 유형에 따른 출력 스키마 정의
-        output_schemas = {
-            "character": {
-                "name": "캐릭터 이름",
-                "role": "역할 (플레이어 캐릭터, NPC, 적 등)",
-                "background": "배경 이야기",
-                "personality": "성격 특성",
-                "appearance": "외형 설명",
-                "abilities": ["능력 1", "능력 2"],
-                "stats": {
-                    "strength": "힘 수치/설명",
-                    "agility": "민첩 수치/설명",
-                    "intelligence": "지능 수치/설명",
-                    "other_stats": "기타 스탯"
-                },
-                "relationships": "다른 캐릭터와의 관계",
-                "arc": "캐릭터 아크/성장",
-                "gameplay_role": "게임플레이 역할",
-                "dialogue_examples": ["대화 예시 1", "대화 예시 2"]
-            },
-            "level": {
-                "name": "레벨 이름",
-                "theme": "테마/분위기",
-                "objective": "목표/미션",
-                "layout": "레이아웃 설명",
-                "environments": ["환경 요소 1", "환경 요소 2"],
-                "challenges": ["도전 요소 1", "도전 요소 2"],
-                "enemies": ["적 유형 1", "적 유형 2"],
-                "puzzles": ["퍼즐 요소 1", "퍼즐 요소 2"],
-                "rewards": ["보상 1", "보상 2"],
-                "narrative_elements": "내러티브 요소",
-                "music_atmosphere": "음악 및 분위기",
-                "player_progression": "플레이어 진행/성장 요소"
-            },
-            "item": {
-                "name": "아이템 이름",
-                "type": "아이템 유형 (무기, 방어구, 소모품 등)",
-                "rarity": "희귀도",
-                "description": "설명",
-                "appearance": "외형",
-                "stats": "능력치/효과",
-                "usage": "사용 방법",
-                "acquisition": "획득 방법",
-                "lore": "아이템 배경 이야기",
-                "upgrade_path": "업그레이드 경로 (있는 경우)",
-                "value": "가치/가격"
-            },
-            "quest": {
-                "title": "퀘스트 제목",
-                "type": "퀘스트 유형 (메인, 사이드, 반복 등)",
-                "giver": "퀘스트 제공자",
-                "location": "위치",
-                "description": "설명",
-                "objectives": ["목표 1", "목표 2"],
-                "narrative": "내러티브 요소",
-                "dialogue": "대화 내용",
-                "challenges": ["도전 요소 1", "도전 요소 2"],
-                "rewards": ["보상 1", "보상 2"],
-                "consequences": "선택과 결과",
-                "related_quests": "관련 퀘스트"
+            Dict[str, Any]: {
+                "full_text": GDD 전체 내용,
+                "core_elements": 스토리라인 생성용 핵심 내용,
+                "relationships": 캐릭터 관계 정보,
+                "levels": 레벨 디자인 정보
             }
-        }
-        
-        # 지원되는 콘텐츠 유형 확인
-        if content_type.lower() not in output_schemas:
-            raise ValueError(f"지원되지 않는 콘텐츠 유형: {content_type}")
-        
-        # 출력 스키마 선택
-        output_schema = output_schemas[content_type.lower()]
-        
-        # 매개변수 문자열 생성
-        params_str = "\n".join([f"{key}: {value}" for key, value in parameters.items()])
-        
-        # 프롬프트 구성
-        prompt = f"""{content_type.capitalize()} 콘텐츠를 다음 매개변수를 바탕으로 생성해주세요:
-
-{params_str}
-
-창의적이고 독창적인 {content_type} 콘텐츠를 개발해주세요. 게임 내에서 매력적이고 기억에 남을 요소가 될 수 있도록 충분한 세부 사항과 독특한 특징을 포함해주세요."""
-        
-        # LLM을 사용하여 특정 콘텐츠 생성
-        return self.llm_service.generate_structured_output(prompt, output_schema)
-    
-    def refine_design(self, current_design: Dict[str, Any], feedback: str) -> Dict[str, Any]:
-        """
-        기존 게임 기획 개선
-        
-        Args:
-            current_design: 현재 게임 기획 정보
-            feedback: 개선을 위한 피드백
             
-        Returns:
-            개선된 게임 기획 정보
+        Raises:
+            Exception: LLM 호출 중 오류 발생 시
         """
-        # 현재 기획을 JSON 문자열로 변환
-        current_design_str = json.dumps(current_design, ensure_ascii=False, indent=2)
+        prompt = self.build_prompt(idea, genre, target, concept)
+        self.logger.info("Sending prompt to LLM...")
         
-        # 프롬프트 구성
-        prompt = f"""다음은 현재 게임 기획 문서입니다:
-
-{current_design_str}
-
-다음 피드백을 바탕으로 이 게임 기획을 개선해주세요:
-
-{feedback}
-
-기존 구조를 유지하면서 피드백을 반영한 개선된 게임 기획을 제공해주세요. 변경 사항을 분명하게 적용하고, 기획의 일관성을 유지해주세요."""
-        
-        # LLM을 사용하여 기획 개선
-        # 원래 기획과 동일한 구조를 유지하기 위해 현재 디자인을 출력 스키마로 사용
-        return self.llm_service.generate_structured_output(prompt, current_design)
-    
-    def generate_complete_design(self,
-                                game_concept: str,
-                                target_audience: str = "일반 게이머",
-                                genre: str = "미정", 
-                                platform: str = "PC",
-                                gameplay_mechanics: List[str] = None,
-                                art_style: str = "",
-                                story_elements: Dict[str, Any] = None,
-                                competitive_analysis: List[str] = None) -> Dict[str, Any]:
-        """
-        완전한 게임 기획서 생성
-        
-        Args:
-            game_concept: 게임 컨셉
-            target_audience: 타겟 사용자층
-            genre: 게임 장르
-            platform: 타겟 플랫폼
-            gameplay_mechanics: 게임플레이 메커니즘 목록 (선택 사항)
-            art_style: 아트 스타일 (선택 사항)
-            story_elements: 스토리 요소 (선택 사항)
-            competitive_analysis: 경쟁 게임 분석 (선택 사항)
+        try:
+            full_text = self.llm.generate(
+                prompt, 
+                temperature=temperature, 
+                max_tokens=max_tokens
+            )
+            self.logger.info("GDD generated successfully.")
             
-        Returns:
-            완전한 게임 기획 정보
-        """
-        # 1. 게임 컨셉 생성
-        concept_info = self.generate_game_concept(
-            initial_concept=game_concept,
-            genre=genre,
-            target_audience=target_audience
-        )
-        
-        # 2. 게임플레이 메커니즘 생성
-        gameplay_info = self.generate_gameplay_mechanics(
-            game_concept=concept_info,
-            complexity_level="중간"
-        )
-        
-        # 3. 내러티브 요소 생성
-        narrative_info = self.generate_narrative_elements(
-            game_concept=concept_info,
-            gameplay_mechanics=gameplay_info
-        )
-        
-        # 4. 아트 디렉션 생성
-        art_info = self.generate_art_direction(
-            game_concept=concept_info,
-            narrative_elements=narrative_info
-        )
-        
-        # 5. 수익화 계획 생성
-        monetization_info = self.generate_monetization_plan(
-            game_concept=concept_info,
-            gameplay_mechanics=gameplay_info,
-            target_audience=target_audience
-        )
-        
-        # 6. 경쟁 분석 (competitive_analysis가 제공된 경우)
-        competition_info = {}
-        if competitive_analysis and len(competitive_analysis) > 0:
-            competition_info["competitors"] = []
-            for competitor in competitive_analysis[:2]:  # 최대 2개까지만 분석
-                competitor_info = self.analyze_competitor(competitor)
-                competition_info["competitors"].append(competitor_info)
-        
-        # 모든 정보 결합
-        complete_design = {
-            "game_title": concept_info.get("title", "게임 제목 미정"),
-            "high_concept": concept_info.get("high_concept", ""),
-            "target_audience": target_audience,
-            "genre": concept_info.get("genre", genre),
-            "platform": platform,
-            "concept_details": concept_info,
-            "gameplay": gameplay_info,
-            "narrative": narrative_info,
-            "art_direction": art_info,
-            "monetization": monetization_info
-        }
-        
-        if competition_info:
-            complete_design["competition_analysis"] = competition_info
-        
-        return complete_design
+            # 핵심 요소 추출
+            core_elements = self.extract_gdd_core(full_text)
+            
+            # 캐릭터 관계 추출
+            relationships = self.extract_character_relationships(full_text)
+            
+            # 레벨 디자인 정보 추출
+            levels = self.extract_level_design(full_text)
+            
+            return {
+                "full_text": full_text,
+                "core_elements": core_elements,
+                "relationships": relationships,
+                "levels": levels
+            }
+        except Exception as e:
+            self.logger.error(f"Error during GDD generation: {e}")
+            raise

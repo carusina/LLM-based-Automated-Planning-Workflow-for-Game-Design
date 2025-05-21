@@ -126,7 +126,8 @@ def generate_gdd(args):
                 "concept": args.concept,
                 "created_at": str(datetime.now()),
                 "file_paths": saved_files,
-                "relationships": gdd_result.get("relationships", {}),
+                "core_elements": gdd_result.get("core_elements", {}),
+                "characters": gdd_result.get("characters", {}),
                 "levels": gdd_result.get("levels", [])
             }
             

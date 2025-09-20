@@ -38,6 +38,15 @@ except ImportError:
     available_providers["anthropic"] = False
     logger.warning("Anthropic library not found. Claude provider will not be available.")
 
+# Gemini
+try:
+    import google.generativeai as genai
+    available_providers["gemini"] = True
+    logger.info("Google Generative AI library loaded successfully")
+except ImportError:
+    available_providers["gemini"] = False
+    logger.warning("Google Generative AI library not found. Gemini provider will not be available.")
+
 # Mistral (선택적으로 임포트)
 try:
     import mistralai.client
@@ -237,6 +246,74 @@ else:
         def __init__(self, *args, **kwargs):
             raise ImportError("Anthropic library not installed. Run 'pip install anthropic' to use this provider.")
 
+# Gemini 구현은 라이브러리가 있을 때만 정의
+if available_providers["gemini"]:
+    class GeminiService(BaseLLM):
+        """Google Gemini API를 사용하는 LLM 서비스 구현"""
+        
+        SUPPORTED_MODELS = [
+            "gemini-1.5-pro-latest",
+            "gemini-pro",
+            "gemini-2.0-flash"
+        ]
+        DEFAULT_MODEL = "gemini-2.0-flash"
+        
+        def __init__(self, model_name: str = None):
+            """
+            Gemini API 연결 설정
+            
+            Args:
+                model_name (str, optional): 사용할 Gemini 모델명. 기본값: DEFAULT_MODEL
+            """
+            load_dotenv()
+            api_key = os.getenv("GEMINI_API_KEY")
+            if not api_key:
+                logger.error("GEMINI_API_KEY is not set in environment")
+                raise ValueError("GEMINI_API_KEY is not set in environment.")
+            
+            genai.configure(api_key=api_key)
+            self.model_name = model_name or self.DEFAULT_MODEL
+            self.client = genai.GenerativeModel(self.model_name)
+            logger.info(f"GeminiService initialized with model: {self.model_name}")
+
+        def generate(self, prompt: str, **kwargs) -> str:
+            """
+            Gemini API를 사용하여 텍스트 생성
+            
+            Args:
+                prompt (str): LLM에 전달할 프롬프트
+                **kwargs: 추가 설정 (temperature, max_tokens 등)
+                
+            Returns:
+                str: 생성된 텍스트
+            """
+            try:
+                generation_config = {
+                    "temperature": kwargs.pop('temperature', 0.7),
+                    "max_output_tokens": kwargs.pop('max_tokens', 4096),
+                }
+                
+                # API 호출
+                response = self.client.generate_content(prompt, generation_config=generation_config)
+                return response.text.strip()
+            except Exception as e:
+                error_info = ErrorUtils.handle_error(
+                    logger, e, "Error generating text with Gemini")
+                raise type(e)(f"Gemini API error: {error_info['error']}")
+                
+        def get_supported_models(self) -> List[str]:
+            """지원하는 모델 목록 반환"""
+            return self.SUPPORTED_MODELS
+        
+        def get_default_model(self) -> str:
+            """기본 모델명 반환"""
+            return self.DEFAULT_MODEL
+else:
+    # 더미 클래스
+    class GeminiService:
+        def __init__(self, *args, **kwargs):
+            raise ImportError("Google Generative AI library not installed. Run 'pip install google-generativeai' to use this provider.")
+
 
 class LLMServiceFactory:
     """LLM 서비스 객체를 생성하는 팩토리 클래스"""
@@ -249,6 +326,8 @@ class LLMServiceFactory:
         PROVIDERS["openai"] = OpenAIService
     if available_providers.get("anthropic", False):
         PROVIDERS["anthropic"] = AnthropicService
+    if available_providers.get("gemini", False):
+        PROVIDERS["gemini"] = GeminiService
     if available_providers.get("mistral", False):
         from .mistral_service import MistralService
         PROVIDERS["mistral"] = MistralService
@@ -279,8 +358,8 @@ class LLMServiceFactory:
         요청된 LLM 제공자와 모델에 맞는 서비스 객체 생성
         
         Args:
-            provider (str, optional): LLM 제공자 ('openai' 또는 'anthropic'). 
-                기본값: .env 파일의 DEFAULT_LLM_PROVIDER 또는 'openai'
+            provider (str, optional): LLM 제공자 ('openai', 'anthropic', 'gemini'). 
+                기본값: .env 파일의 DEFAULT_LLM_PROVIDER
             model_name (str, optional): 사용할 모델명. 
                 기본값: 각 제공자의 기본 모델
             
@@ -288,10 +367,20 @@ class LLMServiceFactory:
             BaseLLM: LLM 서비스 인스턴스
             
         Raises:
-            ValueError: 지원하지 않는 LLM 제공자 지정 시
+            ValueError: 지원하지 않는 LLM 제공자 지정 시 또는 제공자가 지정되지 않았을 때
         """
         load_dotenv()
-        provider = provider or os.getenv("DEFAULT_LLM_PROVIDER", "openai").lower()
+        
+        if provider is None:
+            provider = os.getenv("DEFAULT_LLM_PROVIDER")
+            if provider is None:
+                raise ValueError(
+                    "No LLM provider specified. "
+                    "Please set DEFAULT_LLM_PROVIDER in your .env file (e.g., 'gemini', 'openai') "
+                    "or pass the 'provider' argument when creating the service."
+                )
+        
+        provider = provider.lower()
         
         if provider in LLMServiceFactory.PROVIDERS:
             provider_class = LLMServiceFactory.PROVIDERS[provider]
@@ -299,7 +388,7 @@ class LLMServiceFactory:
         else:
             available = ", ".join(LLMServiceFactory.get_available_providers())
             if not available:
-                error_msg = "No LLM providers available. Please install at least one of: 'openai', 'anthropic'"
+                error_msg = "No LLM providers available. Please install at least one of: 'openai', 'anthropic', 'gemini'"
             else:
                 error_msg = f"Unsupported LLM provider: {provider}. Available providers: {available}"
             logger.error(error_msg)

@@ -168,350 +168,167 @@ class GameDesignGenerator:
 
     def extract_gdd_core(self, gdd_text: str) -> dict:
         """
-        GDD에서 요구된 핵심 요소를 딕셔너리로 추출
-        반환 예시:
-        {
-        "elevator_pitch": str,
-        "narrative_overview": {
-            "story_synopsis": str,
-            "world_lore_and_history": str,
-            "story_branching_and_arcs": str
-        },
-        "game_play_outline": {
-            "win_lose_conditions": str,
-            "endings_rewards": str,
-            "fun_factor": str
-        },
-        "key_features": [str, ...]
-        }
+        GDD에서 요구된 핵심 요소를 딕셔너리로 추출 (멀티라인 지원)
         """
-        # 기본 구조 초기화
         result = {
             "elevator_pitch": "",
-            "narrative_overview": {
-                "story_synopsis": "",
-                "world_lore_and_history": "",
-                "story_branching_and_arcs": ""
-            },
-            "game_play_outline": {
-                "win_lose_conditions": "",
-                "endings_rewards": "",
-                "fun_factor": ""
-            },
+            "narrative_overview": {},
+            "game_play_outline": {},
             "key_features": []
         }
+        
+        def get_section_content(text, start_keyword, end_keyword_pattern):
+            try:
+                # 섹션 시작 키워드와 끝 키워드 패턴으로 섹션 전체 내용을 찾음
+                section_pattern = re.compile(f'{start_keyword}(.*?){end_keyword_pattern}', re.DOTALL | re.IGNORECASE)
+                section_match = re.search(section_pattern, text)
+                if not section_match:
+                    return ""
+                
+                section_text = section_match.group(1)
+                
+                # 하위 항목 추출
+                sub_items = {}
+                item_pattern = re.compile(r'\*\s*([^:]+):\s*(.*?)(?=\s*\*|$)', re.DOTALL)
+                matches = item_pattern.findall(section_text)
+                
+                # 만약 위 패턴으로 못찾으면, 한줄짜리 간단한 패턴으로 다시 시도
+                if not matches:
+                    pattern = re.compile(f'\*\s*{start_keyword}\s*[:\-]?\s*(.*)', re.IGNORECASE)
+                    match = pattern.search(text)
+                    if match:
+                        return match.group(1).strip()
+                    return section_text.strip()
 
-        lines = gdd_text.splitlines()
+                # 멀티라인 콘텐츠 처리
+                content = ""
+                for match in matches:
+                    content += match[0].strip() + ": " + match[1].strip() + "\n"
+                return content.strip()
+
+            except Exception:
+                return ""
 
         # 1) Elevator Pitch
-        for line in lines:
-            m = re.match(r'^\s*\*\s*Elevator Pitch\s*[:\-]\s*(.+)', line, re.IGNORECASE)
-            if m:
-                result["elevator_pitch"] = m.group(1).strip()
-                break
+        result["elevator_pitch"] = get_section_content(gdd_text, "Elevator Pitch", "(Table of Contents|1\.\s*Project Overview)")
 
-        # 2) Narrative Overview: 지정된 세 가지 항목만 추출
-        for line in lines:
-            m = re.match(r'^\s*\*\s*Story Synopsis\s*[:\-]\s*(.+)', line)
-            if m:
-                result["narrative_overview"]["story_synopsis"] = m.group(1).strip()
-            m = re.match(r'^\s*\*\s*World Lore & History\s*[:\-]\s*(.+)', line)
-            if m:
-                result["narrative_overview"]["world_lore_and_history"] = m.group(1).strip()
-            m = re.match(r'^\s*\*\s*Story Branching & Arcs\s*[:\-]\s*(.+)', line)
-            if m:
-                result["narrative_overview"]["story_branching_and_arcs"] = m.group(1).strip()
+        # 2) Narrative Overview
+        narrative_text = get_section_content(gdd_text, "3\.\s*Narrative Overview", "4\.\s*Gameplay Description")
+        result["narrative_overview"] = {
+            "story_synopsis": get_section_content(narrative_text, "Story Synopsis", "Main Characters"),
+            "world_lore_and_history": get_section_content(narrative_text, "World Lore & History", "Story Branching"),
+            "story_branching_and_arcs": get_section_content(narrative_text, "Story Branching & Arcs", "4\.")
+        }
 
         # 3) Game Play Outline
-        for line in lines:
-            m = re.match(r'^\s*\*\s*Win/Lose Conditions\s*[:\-]\s*(.+)', line)
-            if m:
-                result["game_play_outline"]["win_lose_conditions"] = m.group(1).strip()
-            m = re.match(r'^\s*\*\s*Endings\s*&\s*Rewards\s*[:\-]\s*(.+)', line)
-            if m:
-                result["game_play_outline"]["endings_rewards"] = m.group(1).strip()
-            m = re.match(r'^\s*\*\s*Fun Factor\s*[:\-]\s*(.+)', line)
-            if m:
-                result["game_play_outline"]["fun_factor"] = m.group(1).strip()
+        gameplay_text = get_section_content(gdd_text, "5\.\s*Game Play Outline", "6\.\s*Key Features")
+        result["game_play_outline"] = {
+            "win_lose_conditions": get_section_content(gameplay_text, "Win/Lose Conditions", "Endings & Rewards"),
+            "endings_rewards": get_section_content(gameplay_text, "Endings & Rewards", "Fun Factor"),
+            "fun_factor": get_section_content(gameplay_text, "Fun Factor", "6\.")
+        }
 
         # 4) Key Features
-        features = []
-        in_feats = False
-        for line in lines:
-            # 섹션 6. Key Features 시작 감지 (숫자 앞에 # 있거나 없음)
-            if re.match(r'^\s*(?:#+\s*)?6\.\s*Key Features', line, re.IGNORECASE):
-                in_feats = True
-                continue
-            # 다음 섹션 (숫자 또는 # 숫자) 감지 시 종료
-            if in_feats and re.match(r'^\s*(?:#+\s*)?\d+\.', line):
-                break
-            if in_feats:
-                m = re.match(r'^\s*[\*\-]\s*(.+)', line)
-                if m:
-                    features.append(m.group(1).strip())
-        result["key_features"] = features
+        key_features_text = get_section_content(gdd_text, "6\.\s*Key Features", "7\.\s*Mechanics Design")
+        if key_features_text:
+            # Key Features는 보통 불릿 포인트 리스트로 제공됨
+            result["key_features"] = [line.strip() for line in key_features_text.split('*') if line.strip()]
 
         return result
     
     def extract_character_relationships(self, gdd_text: str) -> Dict[str, Dict[str, str]]:
         """
-        GDD에서 캐릭터 간 관계 정보 추출
-        
-        Args:
-            gdd_text (str): 생성된 GDD 전체 텍스트
-            
-        Returns:
-            Dict[str, Dict[str, str]]: 캐릭터 정보
+        GDD에서 캐릭터 간 관계 정보 추출 (더 유연한 버전)
         """
         characters: Dict[str, Dict[str, str]] = {}
-        
         try:
-            # 여러 패턴으로 Narrative Overview 섹션 찾기
-            narrative_section = ""
-            narrative_patterns = [
-                # 3. Narrative Overview 본문만: “#” 유무 상관없이, 4. Gameplay Description 전까지
-                r'(?sm)^\s*(?:##?\s*)?3\.\s*Narrative Overview\s*'  # “3. Narrative Overview” 헤더
-                r'(.*?)(?=^\s*4\.\s*Gameplay\s+Description)',      # “4. Gameplay Description” 전까지
-
-                r'(?s)3\.\s*Narrative Overview\s*'
-                r'(.*?)(?=4\.\s*Gameplay\s+Description)'
-            ]
-            
-            for pattern in narrative_patterns:
-                nav_match = re.search(pattern, gdd_text)
-                if nav_match:
-                    narrative_section = nav_match.group(1)
-                    # print(narrative_section)
-                    break
-                    
-            if not narrative_section:
+            # 3. Narrative Overview 섹션 전체를 가져옴
+            narrative_section_match = re.search(r'(?sm)3\.\s*Narrative Overview(.*?)(?=4\.\s*Gameplay Description)', gdd_text)
+            if not narrative_section_match:
                 self.logger.warning("Narrative Overview 섹션을 찾을 수 없습니다.")
                 return characters
-                
-            # 여러 패턴으로 캐릭터 정보 섹션 찾기
-            character_section = ""
-            character_section_patterns = [
-                # "* Main Characters & Relationships:" 다음부터 "* World Lore" 전까지
-                r'(?s)\*\s*Main Characters\s*&\s*Relationships:\s*(.*?)(?=\*\s*World Lore)',
-                r'(?s)Main Characters\s*&\s*Relationships:\s*(.*?)(?=World Lore)'
-            ]
+
+            narrative_section = narrative_section_match.group(1)
             
-            for pattern in character_section_patterns:
-                char_match = re.search(pattern, narrative_section)
-                if char_match:
-                    character_section = char_match.group(1)
-                    # print(character_section)
-                    break
-                    
-            if not character_section:
+            # Main Characters & Relationships 하위 섹션을 찾음
+            char_section_match = re.search(r'(?sm)\*\s*Main Characters & Relationships:\s*(.*?)(?=\s*\*|\Z)', narrative_section)
+            if not char_section_match:
                 self.logger.warning("Characters & Relationships 섹션을 찾을 수 없습니다.")
                 return characters
-                
-            # 1) 하이픈 리스트 블록용 패턴: multiline + dotall, non-greedy, 다음 하이픈 또는 문서 끝까지
-            block_pattern = re.compile(
-                r'(?ms)^\s*-\s*([^:]+):\s*'   # 그룹1: 캐릭터 이름
-                r'(.+?)'                      # 그룹2: 설명+관계 문구 (non-greedy)
-                r'(?=^\s*-\s*[^:]+:|\Z)'      # 다음 "- 이름:" 이나 문서 끝 앞에서 멈춤
-            )
+            
+            character_section = char_section_match.group(1)
+            
+            # 각 캐릭터 블록(- 으로 시작)을 찾음
+            block_pattern = re.compile(r'(?ms)^\s*-\s*([^:]+):\s*(.*?)(?=(?:^\s*-)|\Z)')
 
             for m in block_pattern.finditer(character_section):
-                name  = m.group(1).strip()
+                name = m.group(1).strip()
                 block = m.group(2).strip()
 
-                # 1) relation 추출
-                rel_match = re.search(r'(?m)^\s*플레이어와의\s*관계:\s*(\S+)', block)
+                # 관계 추출
+                rel_match = re.search(r'플레이어와의\s*관계:\s*(\S+)', block)
                 relation = rel_match.group(1).strip() if rel_match else ""
 
-                # 2) description 추출: relation 라인 전체를 삭제
-                description = re.sub(
-                    r'(?m)^\s*플레이어와의\s*관계:.*$',  # 플레이어와의 관계: 이하 줄
-                    '',                                 # 빈 문자열로 대체
-                    block
-                ).strip()
+                # 설명 추출 (관계 라인 제외)
+                description = re.sub(r'플레이어와의\s*관계:.*', '', block).strip()
 
                 characters[name] = {
                     "description": description,
-                    "relation":   relation
+                    "relation": relation
                 }
             return characters
-            
         except Exception as e:
             self.logger.error(f"캐릭터 관계 추출 중 오류 발생: {e}")
             return characters
 
     def extract_level_design(self, gdd_text: str) -> List[Dict[str, Any]]:
         """
-        GDD에서 레벨 디자인 정보 추출
-        
-        Args:
-            gdd_text (str): 생성된 GDD 전체 텍스트
-            
-        Returns:
-            List[Dict[str, Any]]: 레벨 디자인 정보 리스트
+        GDD에서 레벨 디자인 정보 추출 (더 유연한 버전)
         """
         levels = []
-        
         try:
-            # 여러 패턴으로 Level Design 섹션 찾기
-            level_design_section = ""
-            level_design_patterns = [
-                r'(?s)\*\*9\.\s*Level Design\*\*(.*?)(?=\*\*10\.)',
-                r'(?s)9\.\s*Level Design(.*?)(?=10\.)',
-                r'(?s)Level Design(.*?)UI/UX Design'
-            ]
-            
-            for pattern in level_design_patterns:
-                ld_match = re.search(pattern, gdd_text)
-                if ld_match:
-                    level_design_section = ld_match.group(1)
-                    # print(level_design_section)
-                    break
-                    
-            if not level_design_section:
+            # 9. Level Design 섹션 전체를 가져옴
+            level_design_section_match = re.search(r'(?s)9\.\s*Level Design(.*?)(?=10\.\s*UI/UX Design)', gdd_text)
+            if not level_design_section_match:
                 self.logger.warning("Level Design 섹션을 찾을 수 없습니다.")
                 return levels
-                
-            # 1. Level List & Unique Features 블록 추출
-            level_list_section = ""
-            level_list_patterns = [
-                r'(?s)1\)\s*Level List\s*&\s*Unique Features(.*?)(?=2\))',
-                r'(?s)1\.\s*Level List\s*&\s*Unique Features(.*?)(?=2\.)',
-                r'(?s)Level List\s*&\s*Unique Features(.*?)Difficulty'
-            ]
             
-            for pattern in level_list_patterns:
-                list_match = re.search(pattern, level_design_section)
-                if list_match:
-                    level_list_section = list_match.group(1)
-                    # print(level_list_section)
-                    break
-                    
-            if not level_list_section:
-                self.logger.warning("Level List & Unique Features 섹션을 찾을 수 없습니다.")
-                return levels
-                
-            # 2. Difficulty Curve & Balancing 블록 추출
-            difficulty_section = ""
-            difficulty_patterns = [
-                r'(?s)2\)\s*Difficulty Curve\s*&\s*Balancing(.*)',
-                r'(?s)2\.\s*Difficulty Curve\s*&\s*Balancing(.*)',
-                r'(?s)Difficulty Curve\s*&\s*Balancing(.*)'
-            ]
+            level_design_section = level_design_section_match.group(1)
+
+            # '*'로 시작하는 각 레벨 블록을 분리
+            level_blocks = re.split(r'(?m)^\s*\*', level_design_section)
             
-            for pattern in difficulty_patterns:
-                diff_match = re.search(pattern, level_design_section)
-                if diff_match:
-                    difficulty_section = diff_match.group(1)
-                    # print(difficulty_section)
-                    break
-                    
-            # 레벨 이름 추출
-            level_names = []
-            
-            for line in level_list_section.splitlines():
-                line = line.strip()
-                # 1) '*' 로 시작하는 줄만 골라내고
-                if not line.startswith('*'):
+            for block in level_blocks:
+                if not block.strip():
                     continue
 
-                # 2) 맨 앞의 '*' 제거
-                name_part = line.lstrip('*').strip()
-
-                # 3) 이름 뒤에 붙은 설명 구분자(‘–’, ‘-’, 콜론 등) 기준으로 잘라서
-                #    실제 레벨명만 취한다
-                name = re.split(r'\s*[-–:]\s*', name_part)[0]
-
-                # 4) 빈 문자열 아니면 추가
-                if name:
-                    level_names.append(name)
-                    
-            if not level_names:
-                self.logger.warning("레벨 이름을 추출할 수 없습니다.")
-                return levels
+                # 레벨 이름 추출
+                level_name_match = re.match(r'([^\n:]+)', block)
+                if not level_name_match:
+                    continue
                 
-            self.logger.info(f"발견된 레벨 이름: {level_names}")
-            
-            # 레벨별 정보 추출
-            for level_name in level_names:
-                level_info = {
-                    "name": level_name,
-                    "theme": "",
-                    "atmosphere": "",
-                    "mechanics": []
-                }
+                level_name = level_name_match.group(1).strip()
+                level_info = {"name": level_name, "theme": "", "atmosphere": "", "mechanics": []}
+
+                def get_detail(pattern, text):
+                    match = re.search(pattern, text, re.IGNORECASE)
+                    return match.group(1).strip() if match else ""
+
+                # Theme, Atmosphere, Mechanics 추출
+                level_info["theme"] = get_detail(r'(?:Theme & Background Story|테마)[^:]*:\s*([^\n]+)', block)
+                level_info["atmosphere"] = get_detail(r'(?:Atmosphere & Art Direction|분위기)[^:]*:\s*([^\n]+)', block)
                 
-                # 레벨 내용 추출
-                level_content = ""
-                level_content_patterns = [
-                    f'\\*\\s+{re.escape(level_name)}[^\\n]*\\n([^\\*]+)',
-                    f'{re.escape(level_name)}[^\\n]*\\n([^\\*]+)'
-                ]
-                
-                for pattern in level_content_patterns:
-                    level_match = re.search(pattern, level_list_section, re.DOTALL)
-                    if level_match:
-                        level_content = level_match.group(1)
-                        # print(level_content)
-                        break
-                        
-                if level_content:
-                    # 테마 추출
-                    theme_patterns = [
-                        r'(?:테마|Theme)\s*&\s*(?:배경\s*스토리|Background\s*Story)[^:]*:\s*([^\n]+)',
-                        r'테마[^:]*:\s*([^\n]+)',
-                    ]
-                    
-                    for pattern in theme_patterns:
-                        theme_match = re.search(pattern, level_content, re.IGNORECASE)
-                        if theme_match:
-                            level_info["theme"] = theme_match.group(1).strip()
-                            break
-                    
-                    # 분위기 추출
-                    atmosphere_patterns = [
-                        r'(?:분위기|Atmosphere)\s*&\s*(?:아트\s*디렉션|Art\s*Direction)[^:]*:\s*([^\n]+)',
-                        r'분위기[^:]*:\s*([^\n]+)',
-                    ]
-                    
-                    for pattern in atmosphere_patterns:
-                        atmosphere_match = re.search(pattern, level_content, re.IGNORECASE)
-                        if atmosphere_match:
-                            level_info["atmosphere"] = atmosphere_match.group(1).strip()
-                            break
-                    
-                    # 핵심 메커니즘 추출
-                    mechanics = []
-                    lines = level_content.splitlines()
-                    capture = False
+                mechanics_match = re.search(r'Core Mechanic & Unique Features:\s*(.*)', block, re.DOTALL)
+                if mechanics_match:
+                    mechanics_text = mechanics_match.group(1)
+                    # '-'를 기준으로 메커니즘 분리
+                    level_info["mechanics"] = [mech.strip() for mech in mechanics_text.split('-') if mech.strip()]
 
-                    for line in lines:
-                        # 1) "핵심 메커니즘" 헤더를 만나면 캡처 모드 on
-                        if re.search(r'(?:핵심\s*메커니즘|Core\s*Mechanic)', line, re.IGNORECASE):
-                            capture = True
-                            continue
-
-                        if capture:
-                            # → Fun Elements가 나오면 중단
-                            if re.match(r'\s*-\s*Fun\s*Elements\s*:', line, re.IGNORECASE):
-                                break
-
-                            # 2) 기존 방식: 리스트 아이템만 추가
-                            m = re.match(r'\s*-\s*(.+)', line)
-                            if m:
-                                mechanics.append(m.group(1).strip())
-                            else:
-                                break
-
-                    level_info["mechanics"] = mechanics
-                
-                # 유효한 레벨 정보인지 확인 (최소한 이름은 있어야 함)
                 if level_info["name"]:
                     levels.append(level_info)
-                    self.logger.info(f"레벨 '{level_name}' 정보 추출 완료")
             
             self.logger.info(f"총 {len(levels)}개 레벨 디자인 정보 추출 완료")
             return levels
-            
         except Exception as e:
             self.logger.error(f"레벨 디자인 추출 중 오류 발생: {e}")
             return levels

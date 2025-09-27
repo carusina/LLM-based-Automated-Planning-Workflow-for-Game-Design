@@ -131,26 +131,16 @@ def generate_gdd(args):
             try:
                 logger.info("🔄 지식 그래프 생성 중...")
                 
-                # 게임 메타데이터 구성
-                game_metadata_for_graph = {
-                    "title": metadata.get("title", "Untitled Game"),
-                    "genre": metadata.get("genre", ""),
-                    "target_audience": metadata.get("target_audience", ""),
-                    "concept": metadata.get("concept", "")
-                }
-                
-                # 지식 그래프 저장
-                game_id = kg_service.create_game_node(game_metadata_for_graph)
-                
-                # 레벨 정보가 있으면 그래프에 추가
-                if "levels" in metadata and metadata["levels"]:
-                    try:
-                        kg_service.add_levels(game_id, metadata["levels"])
-                        logger.info(f"✅ {len(metadata['levels'])} 레벨 정보를 그래프에 추가했습니다.")
-                    except Exception as e:
-                        logger.error(f"❌ 레벨 정보 그래프 추가 실패: {e}")
-                
-                logger.info("✅ 지식 그래프 생성 완료")
+                # 그래프 생성을 위해 GDD에서 제목을 파싱하여 메타데이터에 추가
+                game_title = "Untitled Game"
+                for line in gdd_full_text.split('\n')[:20]: # Search in the first 20 lines
+                    if line.lower().startswith('* game title:'):
+                        game_title = line.split(':', 1)[1].strip()
+                        break
+                metadata['game_title'] = game_title
+
+                # 새로운 서비스 함수 호출로 그래프 전체 생성
+                kg_service.create_graph_from_metadata(metadata)
                 
             except Exception as e:
                 logger.error(f"❌ 지식 그래프 생성 실패: {e}")

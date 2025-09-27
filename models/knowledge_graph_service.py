@@ -70,30 +70,50 @@ class KnowledgeGraphService:
         Returns:
             Dict[str, Any]: 추출된 메타데이터 딕셔너리
         """
-        prompt = f"""
-        당신은 게임 기획 문서(GDD)를 분석하여 구조화된 데이터만 추출하는 전문 분석가입니다.
-        다음 GDD 텍스트를 읽고, 아래에 명시된 JSON 형식에 맞춰 핵심 메타데이터를 추출해주세요.
+        prompt = f"""        당신은 게임 기획 문서(GDD)를 분석하여 구조화된 데이터만 추출하는 전문 내러티브 분석가입니다.
+        다음 GDD 텍스트를 읽고, 아래에 명시된 JSON 형식에 맞춰 핵심 메타데이터를 '추론'하고 '추출'해주세요.
+        GDD에 명시적으로 드러나지 않은 내용(예: 인물 간의 관계, 암시적 그룹)은 GDD 내용을 바탕으로 논리적으로 추론하여 채워주세요.
         추가적인 설명이나 인사말 없이, 오직 JSON 객체만 응답으로 반환해야 합니다.
 
         **추출할 JSON 형식:**
         {{
-            "title": "게임 제목",
-            "genre": "게임 장르",
-            "target_audience": "타겟 오디언스",
-            "concept": "핵심 컨셉",
-            "characters": [
-                {{
-                    "name": "캐릭터 이름",
-                    "description": "캐릭터 설명",
-                    "relationship_with_player": "플레이어와의 관계 (신뢰, 우호적, 중립, 적대적, 증오 중 하나)"
-                }}
-            ],
+            "narrative_overview": {{
+                "synopsis": "게임의 전체적인 줄거리 요약",
+                "world_lore": "게임 세계관에 대한 핵심 설명"
+            }},
             "levels": [
                 {{
                     "name": "레벨 이름",
-                    "description": "레벨 설명",
-                    "theme": "레벨 테마",
-                    "atmosphere": "레벨 분위기"
+                    "description": "레벨에 대한 설명",
+                    "theme": "레벨의 주요 테마",
+                    "atmosphere": "레벨의 전체적인 분위기"
+                }}
+            ],
+            "characters": [
+                {{
+                    "name": "캐릭터 이름",
+                    "description": "캐릭터 외형 및 성격 묘사",
+                    "goal": "캐릭터의 궁극적인 목표 또는 동기"
+                }}
+            ],
+            "character_relationships": [
+                {{
+                    "source": "캐릭터 A",
+                    "target": "캐릭터 B",
+                    "type": "관계를 나타내는 서술어 (예: 돕는다, 조언한다, 방해한다)"
+                }}
+            ],
+            "implicit_groups": [
+                {{
+                    "group_name": "그룹의 성격 (예: 주인공 그룹, 적대 그룹)",
+                    "members": ["캐릭터 이름1", "캐릭터 이름2"]
+                }}
+            ],
+            "key_items": [
+                {{
+                    "name": "핵심 아이템 이름",
+                    "description": "아이템의 역할이나 중요성에 대한 설명",
+                    "estimated_location": "아이템을 발견할 수 있는 추정 장소"
                 }}
             ]
         }}
@@ -107,7 +127,7 @@ class KnowledgeGraphService:
         self.logger.info("LLM에게 GDD 메타데이터 추출 요청...")
         
         try:
-            response_text = self.llm.generate(prompt, temperature=0.2, max_tokens=2048)
+            response_text = self.llm.generate(prompt, temperature=0.2, max_tokens=4096) # max_tokens 확장
             
             # LLM 응답에서 JSON 부분만 정확히 추출
             # 마크다운 코드 블록(```json ... ```)을 처리
@@ -116,22 +136,24 @@ class KnowledgeGraphService:
                 json_string = match.group(1)
             else:
                 # 코드 블록이 없으면, 가장 큰 JSON 객체를 찾으려고 시도
-                json_match = re.search(r'\{[\s\S]*\}', response_text)
+                json_match = re.search(r'{{[\s\S]*}}', response_text)
                 if json_match:
                     json_string = json_match.group(0)
                 else:
                     self.logger.error("LLM 응답에서 JSON 객체를 찾을 수 없습니다.")
                     return {{}}
 
+            # JSON 문자열을 파이썬 딕셔너리로 파싱합니다.
             metadata = json.loads(json_string)
-            self.logger.info("GDD 메타데이터 추출 성공.")
+            self.logger.info("GDD 메타데이터를 성공적으로 추출했습니다.")
             return metadata
+
         except json.JSONDecodeError as e:
-            self.logger.error(f"LLM 응답 JSON 파싱 실패: {e}")
-            self.logger.debug(f"파싱 실패한 텍스트: {response_text}")
+            self.logger.error(f"LLM 응답에서 JSON을 파싱하는 중 오류가 발생했습니다: {{e}}")
+            self.logger.debug(f"파싱 실패 텍스트: {{response_text}}")
             return {{}}
         except Exception as e:
-            self.logger.error(f"메타데이터 추출 중 오류 발생: {e}")
+            self.logger.error(f"메타데이터 추출 중 예기치 않은 오류가 발생했습니다: {{e}}")
             return {{}}
     
     def close(self):

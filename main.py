@@ -74,11 +74,9 @@ def generate_gdd(args):
     logger.info("🔄 게임 디자인 문서(GDD) 생성 시작...")
     
     try:
-        # GDD 생성기 초기화
+        # 1. GDD 생성
         gdd_generator = GameDesignGenerator()
-        
-        # GDD 생성
-        gdd_result = gdd_generator.generate_gdd(
+        gdd_full_text = gdd_generator.generate_gdd(
             idea=args.idea,
             genre=args.genre,
             target=args.target,
@@ -89,79 +87,66 @@ def generate_gdd(args):
         output_dir = os.path.join(BASE_DIR, 'output')
         Path(output_dir).mkdir(parents=True, exist_ok=True)
         
-        # 문서 생성기 초기화
-        doc_generator = DocumentGenerator(output_dir=output_dir)
-        
         # 파일명 설정 (타임스탬프 포함)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"GDD_{timestamp}"
         
-        # 파일 저장
+        # 2. GDD 마크다운 파일 저장
+        doc_generator = DocumentGenerator(output_dir=output_dir)
         formats = args.formats.split(',') if args.formats else ["md"]
         saved_files = {}
         
         for fmt in formats:
             try:
-                path = doc_generator.save_document(filename, gdd_result["full_text"], fmt.strip())
+                path = doc_generator.save_document(filename, gdd_full_text, fmt.strip())
                 saved_files[fmt] = path
                 logger.info(f"✅ {fmt.upper()} 형식으로 저장됨: {path}")
             except Exception as e:
                 logger.error(f"❌ {fmt} 형식 저장 실패: {e}")
-        
-        # 메타데이터 저장
+
+        # 3. 메타데이터 추출 및 저장
+        logger.info("🔄 GDD로부터 메타데이터 추출 시작...")
+        kg_service = KnowledgeGraphService()
+        metadata = kg_service.extract_metadata_from_gdd(gdd_full_text)
+
+        if not metadata:
+            logger.error("❌ 메타데이터 추출에 실패하여 이후 프로세스를 중단합니다.")
+            return
+
+        # 추가 정보 병합
+        metadata["id"] = timestamp
+        metadata["created_at"] = str(datetime.now())
+        metadata["file_paths"] = saved_files
+
         try:
-            # 게임 제목 추출
-            game_title = ""
-            for line in gdd_result["full_text"].split('\n')[:10]:
-                if "Game Title:" in line:
-                    game_title = line.split(':', 1)[1].strip()
-                    break
-            
-            # 메타데이터 구성
-            metadata = {
-                "id": timestamp,
-                "title": game_title or "Untitled Game",
-                "genre": args.genre,
-                "target_audience": args.target,
-                "concept": args.concept,
-                "created_at": str(datetime.now()),
-                "file_paths": saved_files,
-                "core_elements": gdd_result.get("core_elements", {}),
-                "characters": gdd_result.get("characters", {}),
-                "levels": gdd_result.get("levels", [])
-            }
-            
-            # 메타데이터 저장
             meta_path = os.path.join(output_dir, f"{filename}_meta.json")
             with open(meta_path, 'w', encoding='utf-8') as f:
                 json.dump(metadata, f, ensure_ascii=False, indent=2)
             logger.info(f"✅ 메타데이터 저장됨: {meta_path}")
         except Exception as e:
             logger.error(f"❌ 메타데이터 저장 실패: {e}")
-        
-        # 지식 그래프 생성 (--skip-graph 옵션이 없는 경우)
-        if not args.skip_graph:
+
+        # 4. 지식 그래프 생성 (--skip-graph 옵션이 없는 경우)
+        if not args.skip_graph and neo4j_available:
             try:
                 logger.info("🔄 지식 그래프 생성 중...")
-                kg_service = KnowledgeGraphService()
                 
                 # 게임 메타데이터 구성
-                game_metadata = {
-                    "title": game_title or "Untitled Game",
-                    "genre": args.genre,
-                    "target_audience": args.target,
-                    "concept": args.concept,
-                    "character_relationships": gdd_result.get("relationships", {})
+                game_metadata_for_graph = {
+                    "title": metadata.get("title", "Untitled Game"),
+                    "genre": metadata.get("genre", ""),
+                    "target_audience": metadata.get("target_audience", ""),
+                    "concept": metadata.get("concept", "")
                 }
                 
                 # 지식 그래프 저장
-                game_id = kg_service.create_game_node(game_metadata)
+                game_id = kg_service.create_game_node(game_metadata_for_graph)
                 
                 # 레벨 정보가 있으면 그래프에 추가
-                if "levels" in gdd_result and gdd_result["levels"]:
+                if "levels" in metadata and metadata["levels"]:
                     try:
-                        kg_service.add_levels(game_id, gdd_result["levels"])
-                        logger.info(f"✅ {len(gdd_result['levels'])} 레벨 정보를 그래프에 추가했습니다.")
+                        kg_service.add_levels(game_id, metadata["levels"])
+                        logger.info(f"✅ {len(metadata['levels'])} 레벨 정보를 그래프에 추가했습니다.")
                     except Exception as e:
                         logger.error(f"❌ 레벨 정보 그래프 추가 실패: {e}")
                 
@@ -169,8 +154,10 @@ def generate_gdd(args):
                 
             except Exception as e:
                 logger.error(f"❌ 지식 그래프 생성 실패: {e}")
-        
-        logger.info("✅ GDD 생성 완료!")
+            finally:
+                kg_service.close()
+
+        logger.info("✅ GDD 생성 및 처리 완료!")
         
     except Exception as e:
         logger.error(f"❌ GDD 생성 중 오류 발생: {e}")

@@ -9,9 +9,12 @@ Neo4j 지식 그래프 변환 및 저장 모듈
 import os
 import re
 import logging
+import json
 from typing import Dict, List, Any, Optional, Tuple
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
+
+from .llm_service import LLMService
 
 class KnowledgeGraphService:
     """
@@ -20,14 +23,15 @@ class KnowledgeGraphService:
     게임 디자인 문서(GDD)와 스토리라인 데이터를 Neo4j 그래프 데이터베이스에 저장하고 관리합니다.
     """
     
-    def __init__(self, uri: str = None, user: str = None, password: str = None):
+    def __init__(self, uri: str = None, user: str = None, password: str = None, llm_service: LLMService = None):
         """
-        Neo4j 연결 초기화
+        Neo4j 연결 및 LLM 서비스 초기화
         
         Args:
             uri (str, optional): Neo4j 연결 URI
             user (str, optional): Neo4j 사용자명
             password (str, optional): Neo4j 비밀번호
+            llm_service (LLMService, optional): LLM 서비스 인스턴스
             
         Raises:
             ValueError: 연결 정보가 없는 경우
@@ -39,15 +43,96 @@ class KnowledgeGraphService:
         load_pass = password or os.getenv('NEO4J_PASSWORD')
         
         if not all([load_uri, load_user, load_pass]):
-            raise ValueError("Neo4j connection info missing in environment.")
-        
-        # Neo4j 드라이버 초기화
-        self.driver = GraphDatabase.driver(load_uri, auth=(load_user, load_pass))
+            self.driver = None
+            # raise ValueError("Neo4j connection info missing in environment.")
+        else:
+            # Neo4j 드라이버 초기화
+            self.driver = GraphDatabase.driver(load_uri, auth=(load_user, load_pass))
+
+        # LLM 서비스 초기화
+        self.llm = llm_service or LLMService()
         
         # 로깅 설정
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.logger.info("Initialized Neo4j connection")
+        if self.driver:
+            self.logger.info("Initialized Neo4j connection")
+        else:
+            self.logger.warning("Neo4j connection info missing, proceeding without Neo4j.")
+
+    def extract_metadata_from_gdd(self, gdd_text: str) -> Dict[str, Any]:
+        """
+        LLM을 사용하여 GDD 텍스트에서 구조화된 메타데이터를 추출합니다.
+
+        Args:
+            gdd_text (str): 분석할 GDD 마크다운 텍스트
+
+        Returns:
+            Dict[str, Any]: 추출된 메타데이터 딕셔너리
+        """
+        prompt = f"""
+        당신은 게임 기획 문서(GDD)를 분석하여 구조화된 데이터만 추출하는 전문 분석가입니다.
+        다음 GDD 텍스트를 읽고, 아래에 명시된 JSON 형식에 맞춰 핵심 메타데이터를 추출해주세요.
+        추가적인 설명이나 인사말 없이, 오직 JSON 객체만 응답으로 반환해야 합니다.
+
+        **추출할 JSON 형식:**
+        {{
+            "title": "게임 제목",
+            "genre": "게임 장르",
+            "target_audience": "타겟 오디언스",
+            "concept": "핵심 컨셉",
+            "characters": [
+                {{
+                    "name": "캐릭터 이름",
+                    "description": "캐릭터 설명",
+                    "relationship_with_player": "플레이어와의 관계 (신뢰, 우호적, 중립, 적대적, 증오 중 하나)"
+                }}
+            ],
+            "levels": [
+                {{
+                    "name": "레벨 이름",
+                    "description": "레벨 설명",
+                    "theme": "레벨 테마",
+                    "atmosphere": "레벨 분위기"
+                }}
+            ]
+        }}
+
+        --- GDD 텍스트 시작 ---
+        {gdd_text}
+        --- GDD 텍스트 끝 ---
+
+        위 GDD 텍스트를 분석하여 JSON 객체를 생성해주세요.
+        """
+        self.logger.info("LLM에게 GDD 메타데이터 추출 요청...")
+        
+        try:
+            response_text = self.llm.generate(prompt, temperature=0.2, max_tokens=2048)
+            
+            # LLM 응답에서 JSON 부분만 정확히 추출
+            # 마크다운 코드 블록(```json ... ```)을 처리
+            match = re.search(r'```json\s*([\s\S]+?)\s*```', response_text)
+            if match:
+                json_string = match.group(1)
+            else:
+                # 코드 블록이 없으면, 가장 큰 JSON 객체를 찾으려고 시도
+                json_match = re.search(r'\{[\s\S]*\}', response_text)
+                if json_match:
+                    json_string = json_match.group(0)
+                else:
+                    self.logger.error("LLM 응답에서 JSON 객체를 찾을 수 없습니다.")
+                    return {{}}
+
+            metadata = json.loads(json_string)
+            self.logger.info("GDD 메타데이터 추출 성공.")
+            return metadata
+        except json.JSONDecodeError as e:
+            self.logger.error(f"LLM 응답 JSON 파싱 실패: {e}")
+            self.logger.debug(f"파싱 실패한 텍스트: {response_text}")
+            return {{}}
+        except Exception as e:
+            self.logger.error(f"메타데이터 추출 중 오류 발생: {e}")
+            return {{}}
     
     def close(self):
         """Neo4j 연결 종료"""

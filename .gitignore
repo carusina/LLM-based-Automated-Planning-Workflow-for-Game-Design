@@ -4,3 +4,5 @@
 # virtual enviroment
 venv/
 models/__pycache__/
+
+GEMINI.md

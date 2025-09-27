@@ -395,68 +395,47 @@ def suggest_chapter_content():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# /generate 라우트 수정 부분
 @app.route('/generate', methods=['POST'])
 def generate_game_design():
-    """게임 기획 자동 생성 API 엔드포인트"""
+    """게임 기획 자동 생성 및 메타데이터 저장 API 엔드포인트 (수정)"""
     data = request.json
-    
-    # 사용자 입력 유효성 검사
     if not data or 'game_concept' not in data:
         return jsonify({'error': 'Game concept is required'}), 400
-    
-    # 필수 게임 정보 추출
-    game_concept = data.get('game_concept', '')
-    target_audience = data.get('target_audience', '일반 게이머')
-    genre = data.get('genre', '미정')
-    platform = data.get('platform', 'PC')
-    
-    # 선택적 상세 정보
-    gameplay_mechanics = data.get('gameplay_mechanics', [])
-    art_style = data.get('art_style', '')
-    story_elements = data.get('story_elements', {})
-    competitive_analysis = data.get('competitive_analysis', [])
-    
-    # 스토리라인 생성 여부
-    generate_storyline = data.get('generate_storyline', False)
-    num_chapters = data.get('num_chapters', 5)
-    num_branches = data.get('num_branches', 3)
-    
-    # LLM을 통한 게임 기획 생성
+
     try:
-        game_design = game_design_generator.generate_complete_design(
-            game_concept=game_concept,
-            target_audience=target_audience,
-            genre=genre,
-            platform=platform,
-            gameplay_mechanics=gameplay_mechanics,
-            art_style=art_style,
-            story_elements=story_elements,
-            competitive_analysis=competitive_analysis
+        # 1. game_design_generator를 통해 GDD 텍스트와 KG 메타데이터를 한 번에 생성
+        gdd_data = game_design_generator.generate_gdd(
+            idea=data.get('game_concept', ''),
+            genre=data.get('genre', '미정'),
+            target=data.get('target_audience', '일반 게이머'),
+            concept=data.get('concept', '')
         )
-        
-        # 스토리라인 생성이 요청된 경우
-        storyline = None
-        if generate_storyline and 'narrative' in game_design:
-            storyline = storyline_generator.generate_complete_storyline(
-                narrative_concept=game_design['narrative'],
-                num_chapters=num_chapters,
-                num_branches=num_branches
-            )
-            
-            # 게임 디자인에 스토리라인 추가
-            game_design['storyline'] = storyline
-        
-        # 문서 생성 및 저장
-        document_path = document_generator.create_document(game_design)
-        
+
+        full_text = gdd_data["full_text"]
+        kg_metadata = gdd_data["kg_metadata"]
+
+        # 2. GDD 마크다운(.md) 파일 저장
+        # 파일명을 여기서 생성 (타임스탬프 기반)
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_filename = f"GDD_{timestamp}"
+        md_filepath = document_generator.save_markdown(f"{base_filename}.md", full_text)
+
+        # 3. KG 메타데이터(.json) 파일 저장
+        meta_filename = os.path.join(OUTPUT_DIR, f"{base_filename}_meta.json")
+        with open(meta_filename, 'w', encoding='utf-8') as f:
+            json.dump(kg_metadata, f, ensure_ascii=False, indent=4)
+
         return jsonify({
             'success': True,
-            'game_design': game_design,
-            'document_path': document_path
+            'message': 'GDD and metadata have been generated successfully.',
+            'document_path': md_filepath,
+            'metadata_path': meta_filename
         })
     
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'error': str(e)}), 500
 
 @app.route('/refine', methods=['POST'])

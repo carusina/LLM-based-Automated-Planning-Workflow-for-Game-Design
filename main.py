@@ -131,12 +131,13 @@ def generate_gdd(args):
             logger.info("🎨 GDD 메타데이터 기반 이미지 생성 시작...")
             try:
                 # llm_service는 프롬프트 엔지니어링에 필요하므로 재사용
-                image_generator = GeminiImageGenerator(llm_service=llm_service)
+                image_generator = GeminiImageGenerator(llm_service=llm_service, art_style_guide=args.art_style)
                 image_output_dir = os.path.join(output_dir, timestamp)
                 
                 generated_paths = image_generator.generate_images_from_metadata(
                     metadata=metadata,
-                    output_dir=image_output_dir
+                    output_dir=image_output_dir,
+                    gdd_text=gdd_full_text
                 )
                 
                 if generated_paths:
@@ -192,6 +193,7 @@ def main():
     gdd_parser.add_argument('--text-model', help='텍스트 생성을 위한 LLM 모델 이름 지정 (예: gemini-1.5-pro-latest)')
     gdd_parser.add_argument('--skip-graph', action='store_true', help='지식 그래프 생성 건너뛰기')
     gdd_parser.add_argument('--generate-images', action='store_true', help='메타데이터를 기반으로 콘셉트 아트 이미지 생성')
+    gdd_parser.add_argument('--art-style', help='이미지 생성에 적용할 커스텀 아트 스타일 가이드 문자열')
 
     # 스토리라인 생성 명령 (기존과 동일)
     storyline_parser = subparsers.add_parser('storyline', help='스토리라인 생성')

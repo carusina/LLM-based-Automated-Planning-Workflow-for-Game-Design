@@ -69,11 +69,14 @@ class GeminiImageGenerator:
             raise ImportError("Required libraries not found. Please run 'pip install google-generativeai pillow google-api-core'.")
 
         self.llm_service = llm_service
-        # 1순위: 사용자가 --art-style로 직접 제공한 스타일을 저장
         self.user_provided_style = art_style_guide
-        # 2순위: GDD를 분석하여 동적으로 생성될 스타일을 저장할 공간
-        self.dynamic_art_style_guide = None
         
+        # --- [REFACTORED] 상태 저장 변수 ---
+        # 확립된 비주얼 규칙을 저장하는 '단일 원천(Single Source of Truth)'
+        self.established_art_style: str = None
+        self.character_sheets: Dict[str, str] = {}
+        # ---
+
         if self.user_provided_style:
             logger.info(f"User-provided art style is set. This will be used as the highest priority.")
 
@@ -83,40 +86,73 @@ class GeminiImageGenerator:
             raise ValueError("GEMINI_API_KEY is not set in the .env file.")
 
         genai.configure(api_key=api_key)
-        self.image_model = genai.GenerativeModel('gemini-2.5-flash-image-preview')
+        self.image_model = genai.GenerativeModel('gemini-2.5-flash-image')
         logger.info(f"GeminiImageGenerator initialized with image model: {self.image_model.model_name}")
 
-    def _create_dynamic_art_style_guide(self, gdd_text: str):
+    def establish_visual_identity(self, gdd_text: str, metadata: Dict[str, Any]):
         """
-        GDD 텍스트 전체를 분석하여, 게임의 핵심 비주얼 테마를 담은
-        '동적 아트 스타일 가이드'를 생성하고 self.dynamic_art_style_guide에 저장합니다.
+        [NEW] GDD와 메타데이터를 기반으로 게임의 '비주얼 바이블'을 생성하고 저장합니다.
+        이 메서드는 모든 이미지 생성 전에 단 한 번만 호출되어야 합니다.
+        """
+        logger.info("Establishing visual identity for the project...")
+
+        # 1. 아트 스타일 확립
+        dynamic_style = self._create_dynamic_art_style_guide(gdd_text)
+        
+        # 3-Tier 우선순위에 따라 최종 아트 스타일 결정
+        if self.user_provided_style:
+            self.established_art_style = self.user_provided_style
+            logger.info(f"Using [Priority 1] User-Provided Art Style: {self.established_art_style}")
+        elif dynamic_style:
+            self.established_art_style = dynamic_style
+            logger.info(f"Using [Priority 2] Dynamic Art Style: {self.established_art_style}")
+        else:
+            self.established_art_style = self.ART_STYLE_GUIDE
+            logger.info(f"Using [Priority 3] Default Fallback Art Style: {self.established_art_style}")
+
+        # 2. 캐릭터 시트 생성 및 저장
+        logger.info("Generating and storing character sheets...")
+        for character_info in metadata.get("characters", []):
+            name = character_info.get("name")
+            if not name:
+                continue
+            sheet = self._create_character_sheet(character_info)
+            if sheet:
+                self.character_sheets[name] = sheet
+                logger.debug(f"Stored character sheet for '{name}'.")
+        
+        logger.info("✅ Visual identity established.")
+
+    def _create_dynamic_art_style_guide(self, gdd_text: str) -> str:
+        """
+        GDD 텍스트를 분석하여 '동적 아트 스타일 가이드'를 생성하여 반환합니다. (상태 저장 X)
         """
         logger.info("Analyzing GDD to create a dynamic art style guide...")
         try:
             prompt = (
-                "As a world-class art director, analyze the overall content and atmosphere of the following Game Design Document (GDD). "
-                "Then, create an 'art style guide' string for an AI image generator by combining 5-7 English keywords that best represent the core visual theme and art style of this game. "
-                "For example, for a world of 'dark medieval fantasy with remnants of ancient technology', you should generate something like: "
-                "'dark medieval fantasy, post-apocalyptic, ancient technology ruins, overgrown nature, solemn atmosphere, muted color palette, cinematic matte painting'.\n\n"
-                "--- GDD TEXT ---"
-                f"{gdd_text[:4000]}" # 토큰 제한을 고려하여 GDD 텍스트 일부 사용
+                "As a world-class art director, analyze the following Game Design Document (GDD). "
+                "Your task is to create an 'art style guide' string. "
+                "This string must be a comma-separated list of 5-7 English keywords that represent the game's core visual theme. "
+                "IMPORTANT: Output ONLY the comma-separated keyword string. Do NOT include any titles, explanations, or conversational text.\n\n"
+                "--- GDD TEXT ---\n"
+                f"{gdd_text[:4000]}"
                 "\n--- END OF GDD ---\n\n"
-                "Now, generate the art style guide string."
+                "Generate the art style guide string now."
             )
-
             generated_style = self.llm_service.generate(prompt, temperature=0.6)
             if generated_style:
-                self.dynamic_art_style_guide = generated_style.strip().replace('"', '') # Corrected: escaped quote
-                logger.info(f"Successfully generated dynamic art style guide: {self.dynamic_art_style_guide}")
+                style = generated_style.strip().replace('"', '')
+                logger.info(f"Successfully generated dynamic art style guide: {style}")
+                return style
             else:
                 logger.warning("Dynamic art style generation resulted in an empty string.")
-
+                return None
         except Exception as e:
             logger.error(f"Failed to create dynamic art style guide: {e}", exc_info=True)
-            self.dynamic_art_style_guide = None # 실패 시 None으로 명시적 초기화
+            return None
 
     def _create_character_sheet(self, character: Dict[str, Any]) -> str:
-        # ... (이전과 동일, 변경 없음)
+        """ 캐릭터 정보를 바탕으로 외형 묘사 시트를 생성합니다. (상태 저장 X) """
         try:
             name = character.get("name")
             desc = character.get("description")
@@ -134,82 +170,82 @@ class GeminiImageGenerator:
             logger.error(f"Failed to create character sheet for '{character.get('name')}': {e}")
             return ""
 
-    def _generate_image_prompts(self, metadata: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
+    def generate_images(self, metadata: Dict[str, Any], output_dir: str, image_types: List[str] = ['characters', 'levels']) -> List[str]:
         """
-        3-Tier 우선순위에 따라 최종 아트 스타일을 결정하고, 계층적 프롬프트를 생성합니다.
-        """
-        logger.info("Generating hierarchical image prompts with prioritized art style...")
+        [REFACTORED] 확립된 비주얼 아이덴티티를 사용하여 이미지를 생성합니다.
         
-        # --- 최종 아트 스타일 결정 (3-Tier Priority) ---
-        final_art_style = ""
-        if self.user_provided_style:
-            final_art_style = self.user_provided_style
-            logger.info(f"Using [Priority 1] User-Provided Art Style: {final_art_style}")
-        elif self.dynamic_art_style_guide:
-            final_art_style = self.dynamic_art_style_guide
-            logger.info(f"Using [Priority 2] Dynamic Art Style: {final_art_style}")
-        else:
-            final_art_style = self.ART_STYLE_GUIDE
-            logger.info(f"Using [Priority 3] Default Fallback Art Style: {final_art_style}")
-
-        prompts = {"characters": {}, "levels": {}}
-        
-        # --- 캐릭터/레벨 프롬프트 생성 (결정된 final_art_style 사용) ---
-        for item_info in metadata.get("characters", []):
-            name = item_info.get("name")
-            description = item_info.get("description")
-            if not (name and description): continue
-
-            subject_prompt = self._create_character_sheet(item_info)
-            action_prompt_template = (
-                "You are a prompt engineer. Based on the character info, create a comma-separated list of keywords in English describing the character's ACTION, POSE, and the SCENE. "
-                "Focus on dynamic elements like 'dramatic pose', 'running through a neon-lit alley', 'subtle smile', 'cinematic action scene'. "
-                "DO NOT describe physical appearance like hair or eyes.\n\n"
-                "Info: {description}\n\n"
-                "Generate the action/scene keywords now."
-            )
-            action_prompt = self.llm_service.generate(action_prompt_template.format(description=description), temperature=0.7).strip().replace('"', '')
-
-            final_prompt_parts = [final_art_style, f"({subject_prompt})" if subject_prompt else "", action_prompt]
-            prompts["characters"][name] = ", ".join(filter(None, final_prompt_parts))
-
-        for item_info in metadata.get("levels", []):
-            level_name = item_info.get("name")
-            if not level_name: continue
-
-            level_desc_template = (
-                "You are a world-class concept artist. Based on the info below, create a vivid, epic, and detailed description of a game level as a comma-separated list of keywords in English. "
-                "Combine all elements into a unified, atmospheric scene description.\n\n"
-                "Name: {name}\nDescription: {description}\nTheme: {theme}\nAtmosphere: {atmosphere}\n\n"
-                "Generate the scene description keywords now. Do not add any conversational text."
-            )
-            subject_prompt = self.llm_service.generate(level_desc_template.format(name=level_name, description=item_info.get("description", ""), theme=item_info.get("theme", ""), atmosphere=item_info.get("atmosphere", "")), temperature=0.7).strip().replace('"', '')
-
-            final_prompt_parts = [final_art_style, subject_prompt]
-            prompts["levels"][level_name] = ", ".join(filter(None, final_prompt_parts))
-
-        return prompts
-
-    def generate_images_from_metadata(self, metadata: Dict[str, Any], output_dir: str, gdd_text: str) -> List[str]:
+        Args:
+            metadata (Dict[str, Any]): GDD에서 추출된 메타데이터.
+            output_dir (str): 이미지를 저장할 디렉토리.
+            image_types (List[str]): 생성할 이미지 타입 ('characters', 'levels').
         """
-        GDD 텍스트를 받아 동적 스타일을 생성한 후, 메타데이터 기반으로 이미지를 생성/저장합니다.
-        """
-        logger.info(f"Starting intelligent image generation process...")
-        
-        if not self.user_provided_style:
-            self._create_dynamic_art_style_guide(gdd_text)
+        if not self.established_art_style:
+            logger.error("Visual identity has not been established. Please call 'establish_visual_identity' first.")
+            return []
 
+        logger.info(f"Starting image generation for {image_types} using established visual identity...")
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
-        image_prompts = self._generate_image_prompts(metadata)
-        if not (image_prompts["characters"] or image_prompts["levels"]):
+        prompts = self._generate_image_prompts(metadata, image_types)
+        
+        if not any(prompts.values()):
             logger.warning("No image prompts were generated. Skipping image creation.")
             return []
 
+        all_prompts = {f"{img_type}_{k}": v for img_type, item_prompts in prompts.items() for k, v in item_prompts.items()}
+        
+        saved_image_paths = self._request_and_save_images(all_prompts, output_path)
+        return saved_image_paths
+
+    def _generate_image_prompts(self, metadata: Dict[str, Any], image_types: List[str]) -> Dict[str, Dict[str, str]]:
+        """ 확립된 스타일과 시트를 사용하여 최종 프롬프트를 조합합니다. """
+        prompts = {img_type: {} for img_type in image_types}
+
+        if 'characters' in image_types:
+            for item_info in metadata.get("characters", []):
+                name = item_info.get("name")
+                if not name: continue
+                
+                # 미리 생성된 캐릭터 시트 사용
+                subject_prompt = self.character_sheets.get(name, "")
+                if not subject_prompt:
+                    logger.warning(f"Character sheet for '{name}' not found in established identity. Skipping.")
+                    continue
+
+                action_prompt_template = (
+                    "You are a prompt engineer. Based on the character info, create a comma-separated list of keywords in English describing the character's ACTION, POSE, and the SCENE. "
+                    "Focus on dynamic elements like 'dramatic pose', 'running through a neon-lit alley', 'subtle smile', 'cinematic action scene'. "
+                    "DO NOT describe physical appearance like hair or eyes.\n\n"
+                    "Info: {description}\n\n"
+                    "Generate the action/scene keywords now."
+                )
+                action_prompt = self.llm_service.generate(action_prompt_template.format(description=item_info.get("description", "")), temperature=0.7).strip().replace('"', '')
+
+                final_prompt_parts = [self.established_art_style, f"({subject_prompt})", action_prompt]
+                prompts["characters"][name] = ", ".join(filter(None, final_prompt_parts))
+
+        if 'levels' in image_types:
+            for item_info in metadata.get("levels", []):
+                level_name = item_info.get("name")
+                if not level_name: continue
+
+                level_desc_template = (
+                    "You are a world-class concept artist. Based on the info below, create a vivid, epic, and detailed description of a game level as a comma-separated list of keywords in English. "
+                    "Combine all elements into a unified, atmospheric scene description.\n\n"
+                    "Name: {name}\nDescription: {description}\nTheme: {theme}\nAtmosphere: {atmosphere}\n\n"
+                    "Generate the scene description keywords now. Do not add any conversational text."
+                )
+                subject_prompt = self.llm_service.generate(level_desc_template.format(name=level_name, description=item_info.get("description", ""), theme=item_info.get("theme", ""), atmosphere=item_info.get("atmosphere", "")), temperature=0.7).strip().replace('"', '')
+
+                final_prompt_parts = [self.established_art_style, subject_prompt]
+                prompts["levels"][level_name] = ", ".join(filter(None, final_prompt_parts))
+
+        return prompts
+
+    def _request_and_save_images(self, all_prompts: Dict[str, str], output_path: Path) -> List[str]:
+        """ 프롬프트 딕셔너리를 받아 이미지를 요청하고 저장하는 공통 로직 """
         saved_image_paths = []
-        all_prompts = {f"character_{k}": v for k, v in image_prompts["characters"].items()}
-        all_prompts.update({f"level_{k}": v for k, v in image_prompts["levels"].items()})
         total_requests = len(all_prompts)
 
         for entity_key, prompt in all_prompts.items():
@@ -227,17 +263,22 @@ class GeminiImageGenerator:
                         if attempt + 1 == max_retries: raise
                         time.sleep(retry_delay_seconds)
                         retry_delay_seconds *= 2
-                if not response: continue
+                
+                if not response:
+                    logger.warning(f"No response received for '{entity_key}' after all retries.")
+                    continue
 
                 images_saved_for_this_prompt = 0
                 text_parts = []
-                if not response.candidates: continue
+                if not response.candidates:
+                    logger.error(f"Image generation failed for '{entity_key}'. No candidates returned.")
+                    continue
 
                 for i, part in enumerate(response.candidates[0].content.parts):
                     if hasattr(part, 'inline_data') and part.inline_data and part.inline_data.mime_type.startswith('image/'):
                         image_data = part.inline_data.data
                         image = Image.open(BytesIO(image_data))
-                        safe_filename_base = re.sub(r'[\\/*?:\"<>|]', '_', entity_key).strip() # Corrected: escaped quote
+                        safe_filename_base = re.sub(r'[\\/*?:\"<>|]', '_', entity_key).strip()
                         image_filename = f"{safe_filename_base}_{i}.png"
                         image_path = output_path / image_filename
                         image.save(image_path)
@@ -255,9 +296,9 @@ class GeminiImageGenerator:
                         error_details = "No valid image data in response."
                         try:
                             if response.prompt_feedback: error_details += f" | Prompt Feedback: {response.prompt_feedback}"
-                            if response.candidates and response.candidates[0].safety_ratings: error_details += f" | Candidate Safety Ratings: {response.candidates[0].safety_ratings}"
-                        except (AttributeError, IndexError): pass
+                        except AttributeError: pass
                         logger.error(f"Image generation failed for '{entity_key}'. {error_details}")
+
             except Exception as e:
                 logger.error(f"An unexpected error occurred while processing '{entity_key}': {e}", exc_info=False)
         

@@ -82,7 +82,7 @@ python -m venv venv
 # 가상 환경 활성화 (Windows)
 venv\Scripts\activate
 # 가상 환경 활성화 (macOS/Linux)
-# source venv/bin/activate
+source venv/bin/activate
 
 # 의존성 설치
 pip install -r requirements.txt

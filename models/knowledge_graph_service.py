@@ -13,17 +13,19 @@ class KnowledgeGraphService:
     GDD 기반 메타데이터 추출 및 Neo4j 지식 그래프 생성을 담당하는 서비스
     """
     
-    def __init__(self, uri: str = None, user: str = None, password: str = None, llm_service: LLMService = None):
+    def __init__(self, llm_service: LLMService, *, uri: str = None, user: str = None, password: str = None):
         load_dotenv()
+        
+        self.llm = llm_service
+
         load_uri = uri or os.getenv('NEO4J_URI')
         load_user = user or os.getenv('NEO4J_USER')
         load_pass = password or os.getenv('NEO4J_PASSWORD')
-        
+
         self.driver = None
         if all([load_uri, load_user, load_pass]):
             self.driver = GraphDatabase.driver(load_uri, auth=(load_user, load_pass))
         
-        self.llm = llm_service or LLMService()
         logging.basicConfig(level=logging.INFO)
         self.logger = logging.getLogger(self.__class__.__name__)
         if self.driver:

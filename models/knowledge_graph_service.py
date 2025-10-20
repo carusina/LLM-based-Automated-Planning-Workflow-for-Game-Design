@@ -45,6 +45,7 @@ class KnowledgeGraphService:
         다음 GDD 텍스트를 읽고, 아래에 명시된 JSON 형식에 맞춰 핵심 메타데이터를 '추론'하고 '추출'해주세요.
         GDD에 명시적으로 드러나지 않은 내용(예: 인물 간의 관계, 암시적 그룹)은 GDD 내용을 바탕으로 논리적으로 추론하여 채워주세요.
         추가적인 설명이나 인사말 없이, 오직 JSON 객체만 응답으로 반환해야 합니다.
+        모든 키와 문자열 값에 반드시 큰따옴표(")를 사용하고, 마지막 요소 뒤에 쉼표(trailing comma)를 사용하지 마세요.
 
         **추출할 JSON 형식:**
         {{
@@ -112,13 +113,14 @@ class KnowledgeGraphService:
             metadata = json.loads(json_string)
             self.logger.info("GDD 메타데이터를 성공적으로 추출했습니다.")
             return metadata
+            return {}
         except json.JSONDecodeError as e:
             self.logger.error(f"LLM 응답에서 JSON을 파싱하는 중 오류가 발생했습니다: {e}")
             self.logger.debug(f"파싱 실패 텍스트: {response_text}")
-            return {{}}
+            return {}
         except Exception as e:
             self.logger.error(f"메타데이터 추출 중 예기치 않은 오류가 발생했습니다: {e}")
-            return {{}}
+            return {}
 
     def create_graph_from_metadata(self, metadata: Dict[str, Any]):
         """

@@ -34,13 +34,12 @@ try:
 except ImportError:
     Image = None
 
-# google.generativeai가 설치되지 않았을 경우를 대비
 try:
-    import google.generativeai as genai
+    from google import genai
     from google.api_core import exceptions
 except ImportError:
-    genai = None
-    exceptions = None
+    # This is a critical dependency, so we raise an error if it's not found.
+    raise ImportError("The 'google-genai' library is required. Please install it with 'pip install google-genai'")
 
 from .llm_service import LLMService
 from .utils import LoggingUtils
@@ -57,7 +56,7 @@ class GeminiImageGenerator:
     # 3순위(폴백)로 사용될 기본 아트 스타일 가이드
     ART_STYLE_GUIDE = "masterpiece, best quality, (art by studio ghibli, makoto shinkai:1.2), beautiful detailed vibrant illustration, cinematic lighting, epic fantasy"
 
-    def __init__(self, llm_service: LLMService, art_style_guide: str = None):
+    def __init__(self, client: genai.Client, llm_service: LLMService, image_model_name: str = "models/gemini-2.5-flash-image", art_style_guide: str = None):
         """
         GeminiImageGenerator를 초기화합니다.
 
@@ -65,29 +64,14 @@ class GeminiImageGenerator:
             llm_service (LLMService): 프롬프트 생성을 위한 LLM 서비스 인스턴스.
             art_style_guide (str, optional): 1순위로 적용될 사용자 지정 아트 스타일.
         """
-        if not genai or not Image or not exceptions:
-            raise ImportError("Required libraries not found. Please run 'pip install google-generativeai pillow google-api-core'.")
-
+        self.client = client
         self.llm_service = llm_service
+        self.image_model_name = image_model_name
         self.user_provided_style = art_style_guide
-        
-        # --- [REFACTORED] 상태 저장 변수 ---
-        # 확립된 비주얼 규칙을 저장하는 '단일 원천(Single Source of Truth)'
+
+        # --- State storage for visual identity ---
         self.established_art_style: str = None
         self.character_sheets: Dict[str, str] = {}
-        # ---
-
-        if self.user_provided_style:
-            logger.info(f"User-provided art style is set. This will be used as the highest priority.")
-
-        load_dotenv()
-        api_key = os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("GEMINI_API_KEY is not set in the .env file.")
-
-        genai.configure(api_key=api_key)
-        self.image_model = genai.GenerativeModel('gemini-2.5-flash-image')
-        logger.info(f"GeminiImageGenerator initialized with image model: {self.image_model.model_name}")
 
     def establish_visual_identity(self, gdd_text: str, metadata: Dict[str, Any]):
         """
@@ -256,7 +240,9 @@ class GeminiImageGenerator:
                 for attempt in range(max_retries):
                     try:
                         logger.info(f"Requesting image for '{entity_key}' (Attempt {attempt + 1}/{max_retries})...")
-                        response = self.image_model.generate_content(contents=[prompt])
+                        response = self.client.models.generate_content(
+                            model=self.image_model_name, contents=[prompt]
+                        )
                         break
                     except (exceptions.InternalServerError, exceptions.ServiceUnavailable) as e:
                         logger.warning(f"Attempt {attempt + 1} for '{entity_key}' failed: {e}. Retrying...")

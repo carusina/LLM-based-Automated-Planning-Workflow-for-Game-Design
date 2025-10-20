@@ -10,8 +10,12 @@ models/cinematic_generator.py
 """
 import os
 import re
+import time
 from pathlib import Path
 from typing import Dict, Any, List
+
+from google import genai
+from google.genai import types
 
 from .llm_service import LLMService
 from .local_image_generator import GeminiImageGenerator
@@ -36,6 +40,7 @@ class CinematicGenerator:
         """
         self.llm_service = llm_service
         self.image_generator = image_generator
+        self.genai_client = genai.Client()
         logger.info("CinematicGenerator initialized.")
 
     def _create_scene_narrative(self, description: str) -> str:
@@ -117,49 +122,80 @@ class CinematicGenerator:
             final_prompt = ", ".join(filter(None, prompt_parts))
             logger.debug(f"Final prompt for scene {scene_id}: {final_prompt}")
 
-            # 이미지 생성 및 저장
+            # Step 1: Generate the image object in memory
             try:
-                image_filename = f"scene_{scene_id}.png"
-                image_path = output_path / image_filename
+                logger.info(f"Requesting image for scene {scene_id} to use as video base...")
+                # Use the new 'genai.Client' interface via the injected image_generator
+                image_generation_response = self.image_generator.client.models.generate_content(
+                    model=self.image_generator.image_model_name,
+                    contents=[final_prompt]
+                )
+
+                # The response does not contain 'generated_images'.
+                # New hypothesis: Extract the 'Part' object from the response and pass it to the video generator.
+                try:
+                    # Extract the raw bytes and mime type from the response part.
+                    image_part = image_generation_response.candidates[0].content.parts[0]
+                    image_bytes = image_part.inline_data.data
+                    mime_type = image_part.inline_data.mime_type
+
+                    # Create a types.Image object as suggested by the community findings.
+                    base_image_object = types.Image(image_bytes=image_bytes, mime_type=mime_type)
+                    logger.info(f"Successfully created types.Image object for scene {scene_id}.")
+                except (IndexError, AttributeError, KeyError) as e:
+                    logger.error(f"Could not extract image part from response for scene {scene_id}. Error: {e}")
+                    # Log the full text of the response if available, in case of safety blocking etc.
+                    try:
+                        logger.error(f"Full text of failed response: {image_generation_response.text}")
+                    except Exception:
+                        pass
+                    continue
+                logger.info(f"Successfully generated base image for scene {scene_id}.")
+
+                # Step 2: Generate video with Veo using the image object
+                video_prompt = (
+                    f"Based on this image, create a video clip in the style of a game cinematic trailer "
+                    f"with the following description: '{scene.get('description', 'a dynamic cinematic scene')}'. "
+                    f"The video should be highly dynamic and cinematic, matching the mood of the original image. "
+                    f"Generate an 8-second, 24 FPS video and include a grand, fitting soundtrack."
+                )
                 
-                logger.info(f"Requesting image for scene {scene_id}...")
-                response = self.image_generator.image_model.generate_content(contents=[final_prompt])
+                logger.info(f"Initiating Veo generation for scene {scene_id}...")
+                video_operation = self.genai_client.models.generate_videos(
+                    model="veo-3.1-generate-preview",
+                    prompt=video_prompt,
+                    image=base_image_object,
+                )
 
-                image_saved_for_scene = False
-                text_parts = []
+                # Step 3: Poll for video completion
+                while not video_operation.done:
+                    logger.info(f"Waiting for video generation to complete for scene {scene_id}...")
+                    time.sleep(10)
+                    video_operation = self.genai_client.operations.get(video_operation)
 
-                if not response.candidates:
-                    logger.error(f"Image generation failed for scene {scene_id}. No candidates returned.")
+                if video_operation.error:
+                    logger.error(f"Error during video generation for scene {scene_id}: {video_operation.error}")
                     continue
 
-                for part in response.candidates[0].content.parts:
-                    if hasattr(part, 'inline_data') and part.inline_data and part.inline_data.mime_type.startswith('image/'):
-                        image_data = part.inline_data.data
-                        from PIL import Image
-                        from io import BytesIO
-                        
-                        image = Image.open(BytesIO(image_data))
-                        image.save(image_path)
-                        saved_image_paths.append(str(image_path))
-                        logger.info(f"✅ Successfully saved image: {image_path}")
-                        image_saved_for_scene = True
-                        break
-                    elif hasattr(part, 'text') and part.text:
-                        text_parts.append(part.text)
-
-                if not image_saved_for_scene:
-                    if text_parts:
-                        full_text_response = " ".join(text_parts)
-                        logger.error(f"Image generation failed for scene {scene_id}. Model returned text instead: {full_text_response[:500]}...")
-                    else:
-                        error_details = "No valid image data in response."
-                        try:
-                            if response.prompt_feedback: error_details += f" | Prompt Feedback: {response.prompt_feedback}"
-                        except AttributeError: pass
-                        logger.error(f"Image generation failed for scene {scene_id}. {error_details}")
+                # Step 4: Download and save the video
+                generated_video = video_operation.response.generated_videos[0]
+                logger.info(f"Downloading generated video for scene {scene_id}...")
+                
+                # The download method returns the video data as bytes.
+                video_bytes = self.genai_client.files.download(file=generated_video.video)
+                
+                video_filename = f"scene_{scene_id}.mp4"
+                video_path = output_path / video_filename
+                
+                # Write the bytes to a file.
+                with open(video_path, "wb") as f:
+                    f.write(video_bytes)
+                
+                saved_image_paths.append(str(video_path)) # Re-using this list for video paths
+                logger.info(f"✅ Successfully saved video: {video_path}")
 
             except Exception as e:
-                logger.error(f"An error occurred while generating image for scene {scene_id}: {e}", exc_info=True)
+                logger.error(f"An error occurred during image/video generation for scene {scene_id}: {e}", exc_info=True)
 
         logger.info(f"Cinematic scene generation finished. Saved {len(saved_image_paths)} images.")
         return saved_image_paths

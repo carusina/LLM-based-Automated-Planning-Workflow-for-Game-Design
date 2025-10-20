@@ -7,6 +7,7 @@ from datetime import datetime
 
 import typer
 from dotenv import load_dotenv
+from google import genai
 
 from models.game_design_generator import GameDesignGenerator
 from models.knowledge_graph_service import KnowledgeGraphService
@@ -24,13 +25,6 @@ app = typer.Typer(
     rich_markup_mode="markdown"
 )
 
-def get_llm_service() -> LLMService:
-    """Initializes and returns the LLMService, handling potential errors."""
-    try:
-        return LLMService()
-    except (ValueError, ImportError) as e:
-        typer.secho(f"Error initializing LLM Service: {e}", fg=typer.colors.RED)
-        raise typer.Exit(code=1)
 
 @app.command()
 def gdd(
@@ -51,7 +45,18 @@ def gdd(
 
     # --- Part 1: GDD Generation ---
     typer.echo("\n[Step 1/3] Initializing services...")
-    llm_service = get_llm_service()
+
+    # Configure API and create a single client instance
+    try:
+        # The new google-genai library takes the API key directly in the Client constructor.
+        api_key = os.environ["GEMINI_API_KEY"]
+        client = genai.Client(api_key=api_key)
+    except KeyError:
+        typer.secho("Error: GEMINI_API_KEY not found in .env file.", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+    # Inject the client into the services
+    llm_service = LLMService(client=client)
     gdd_generator = GameDesignGenerator(llm_service)
 
     typer.echo("Prompt parameters are ready for GDD generation.")
@@ -98,7 +103,7 @@ def gdd(
     typer.secho(f"Successfully generated and saved storyline: {storyline_filename}", fg=typer.colors.GREEN)
 
     typer.echo("\n[Step 5/7] Initializing Art Director and establishing visual identity...")
-    image_generator = GeminiImageGenerator(llm_service)
+    image_generator = GeminiImageGenerator(client=client, llm_service=llm_service)
     image_generator.establish_visual_identity(gdd_text=markdown_content, metadata=metadata)
     typer.echo("Visual identity has been established.")
 
@@ -125,6 +130,7 @@ def gdd(
     except Exception as e:
         typer.secho(f"\nAn error occurred during cinematic scene generation: {e}", fg=typer.colors.RED)
     
+
     typer.secho("\n--- Full Project Generation Pipeline Finished! ---", fg=typer.colors.CYAN, bold=True)
 
 @app.command()

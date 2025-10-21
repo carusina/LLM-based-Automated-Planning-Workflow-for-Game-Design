@@ -36,6 +36,7 @@ except ImportError:
 
 try:
     from google import genai
+    from google.genai import types
     from google.api_core import exceptions
 except ImportError:
     # This is a critical dependency, so we raise an error if it's not found.
@@ -241,7 +242,12 @@ class GeminiImageGenerator:
                     try:
                         logger.info(f"Requesting image for '{entity_key}' (Attempt {attempt + 1}/{max_retries})...")
                         response = self.client.models.generate_content(
-                            model=self.image_model_name, contents=[prompt]
+                            model=self.image_model_name,
+                            contents=[prompt],
+                            config=types.GenerateContentConfig(
+                                response_modalities=['Image'],
+                                image_config=types.ImageConfig(aspect_ratio="16:9",)
+                            )
                         )
                         break
                     except (exceptions.InternalServerError, exceptions.ServiceUnavailable) as e:

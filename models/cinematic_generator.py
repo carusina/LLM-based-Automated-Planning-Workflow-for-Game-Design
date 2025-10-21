@@ -128,7 +128,11 @@ class CinematicGenerator:
                 # Use the new 'genai.Client' interface via the injected image_generator
                 image_generation_response = self.image_generator.client.models.generate_content(
                     model=self.image_generator.image_model_name,
-                    contents=[final_prompt]
+                    contents=[final_prompt],
+                    config=types.GenerateContentConfig(
+                        response_modalities=['Image'],
+                        image_config=types.ImageConfig(aspect_ratio="16:9",)
+                    )
                 )
 
                 # The response does not contain 'generated_images'.
@@ -174,6 +178,10 @@ class CinematicGenerator:
                     model="veo-3.1-generate-preview",
                     prompt=video_prompt,
                     image=base_image_object,
+                    config=types.GenerateVideosConfig(
+                        number_of_videos=1,
+                        resolution="720p"
+                    ),
                 )
 
                 # Step 3: Poll for video completion

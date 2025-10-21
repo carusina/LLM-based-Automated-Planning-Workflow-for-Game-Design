@@ -134,6 +134,15 @@ class CinematicGenerator:
                 # The response does not contain 'generated_images'.
                 # New hypothesis: Extract the 'Part' object from the response and pass it to the video generator.
                 try:
+                    # Defensively check if the response has candidates. It might be empty due to safety filters.
+                    if not image_generation_response.candidates:
+                        # Try to log the reason from prompt_feedback for better debugging.
+                        if hasattr(image_generation_response, 'prompt_feedback') and image_generation_response.prompt_feedback:
+                            logger.error(f"Image generation blocked for scene {scene_id}. Reason: {image_generation_response.prompt_feedback}")
+                        else:
+                            logger.error(f"Image generation failed for scene {scene_id}: Response has no candidates.")
+                        continue # Skip to the next scene
+
                     # Extract the raw bytes and mime type from the response part.
                     image_part = image_generation_response.candidates[0].content.parts[0]
                     image_bytes = image_part.inline_data.data
@@ -142,7 +151,7 @@ class CinematicGenerator:
                     # Create a types.Image object as suggested by the community findings.
                     base_image_object = types.Image(image_bytes=image_bytes, mime_type=mime_type)
                     logger.info(f"Successfully created types.Image object for scene {scene_id}.")
-                except (IndexError, AttributeError, KeyError) as e:
+                except (IndexError, AttributeError, TypeError) as e:
                     logger.error(f"Could not extract image part from response for scene {scene_id}. Error: {e}")
                     # Log the full text of the response if available, in case of safety blocking etc.
                     try:
@@ -196,6 +205,10 @@ class CinematicGenerator:
 
             except Exception as e:
                 logger.error(f"An error occurred during image/video generation for scene {scene_id}: {e}", exc_info=True)
+
+            # Add a delay to avoid hitting API rate limits
+            logger.info("Waiting for 10 seconds before processing the next scene...")
+            time.sleep(10)
 
         logger.info(f"Cinematic scene generation finished. Saved {len(saved_image_paths)} images.")
         return saved_image_paths

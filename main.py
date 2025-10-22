@@ -69,10 +69,14 @@ def gdd(
         concept=concept
     )
     
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
+    # Create a timestamped directory for all outputs
+    output_dir = Path(output_dir) / timestamp
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
     base_filename = f"GDD_{art_style.replace(' ', '_')}_{timestamp}"
-    gdd_filename = Path(output_dir) / f"{base_filename}.md"
+    gdd_filename = output_dir / f"{base_filename}.md"
     
     with open(gdd_filename, "w", encoding="utf-8") as f:
         f.write(markdown_content)
@@ -81,7 +85,7 @@ def gdd(
     typer.echo("\n[Step 3/3] Extracting metadata from GDD...")
     kg_service = KnowledgeGraphService(llm_service)
     metadata = kg_service.extract_metadata_from_gdd(markdown_content)
-    meta_filename = Path(output_dir) / f"{base_filename}_meta.json"
+    meta_filename = output_dir / f"{base_filename}_meta.json"
     
     with open(meta_filename, "w", encoding="utf-8") as f:
         json.dump(metadata, f, ensure_ascii=False, indent=2)
@@ -97,7 +101,7 @@ def gdd(
     typer.echo(f"\n[Step 4/7] Generating a {num_chapters}-chapter storyline...")
     storyline_generator = StorylineGenerator(llm_service)
     scenes = storyline_generator.generate(metadata, num_chapters)
-    storyline_filename = Path(output_dir) / f"{base_filename}_storyline.json"
+    storyline_filename = output_dir / f"{base_filename}_storyline.json"
     with open(storyline_filename, "w", encoding="utf-8") as f:
         json.dump(scenes, f, ensure_ascii=False, indent=2)
     typer.secho(f"Successfully generated and saved storyline: {storyline_filename}", fg=typer.colors.GREEN)
@@ -107,7 +111,7 @@ def gdd(
     image_generator.establish_visual_identity(gdd_text=markdown_content, metadata=metadata)
     typer.echo("Visual identity has been established.")
 
-    image_output_dir = Path(output_dir) / timestamp
+    image_output_dir = output_dir
     if not skip_concepts:
         typer.echo("\n[Step 6/7] Generating individual concept arts...")
         concept_art_dir = image_output_dir / "concepts"
@@ -146,6 +150,71 @@ def web():
     (Placeholder) Launches the web interface for interacting with the project.
     """
     typer.echo("Web interface command is not yet implemented.")
+
+@app.command()
+def resume_video(
+    timestamp: str = typer.Option(..., "--timestamp", "-t", help="Timestamp of the project to resume video generation."),
+    output_dir: str = typer.Option("output", "-o", "--output-dir", help="Directory where the project is saved."),
+):
+    """
+    Resumes video generation for a project that was previously interrupted.
+    """
+    typer.secho(f"--- Resuming Video Generation for project {timestamp} ---", fg=typer.colors.CYAN, bold=True)
+
+    project_dir = Path(output_dir) / timestamp
+    if not project_dir.exists():
+        typer.secho(f"Error: Project directory not found at {project_dir}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+    # Find the GDD, metadata, and storyline files
+    try:
+        gdd_file = list(project_dir.glob("GDD_*.md"))[0]
+        meta_file = list(project_dir.glob("*_meta.json"))[0]
+        storyline_file = list(project_dir.glob("*_storyline.json"))[0]
+    except IndexError:
+        typer.secho(f"Error: Could not find all required files (GDD, meta, storyline) in {project_dir}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+    # --- Initialize services ---
+    typer.echo("\n[Step 1/3] Initializing services...")
+    try:
+        api_key = os.environ["GEMINI_API_KEY"]
+        client = genai.Client(api_key=api_key)
+    except KeyError:
+        typer.secho("Error: GEMINI_API_KEY not found in .env file.", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+    llm_service = LLMService(client=client)
+    image_generator = GeminiImageGenerator(client=client, llm_service=llm_service)
+
+    # --- Load existing data ---
+    typer.echo("\n[Step 2/3] Loading existing project data...")
+    with open(gdd_file, "r", encoding="utf-8") as f:
+        markdown_content = f.read()
+    with open(meta_file, "r", encoding="utf-8") as f:
+        metadata = json.load(f)
+    with open(storyline_file, "r", encoding="utf-8") as f:
+        scenes = json.load(f)
+
+    image_generator.establish_visual_identity(gdd_text=markdown_content, metadata=metadata)
+    typer.echo("Visual identity has been re-established.")
+
+    # --- Resume cinematic scene generation ---
+    typer.echo("\n[Step 3/3] Resuming cinematic scene generation...")
+    try:
+        from models.cinematic_generator import CinematicGenerator
+        cinematic_gen = CinematicGenerator(llm_service, image_generator)
+        scene_image_dir = project_dir / "scenes"
+        scene_image_files = cinematic_gen.resume_generation(storyline_data=scenes, output_dir=str(scene_image_dir))
+        if scene_image_files:
+            typer.secho(f"\nSuccessfully generated {len(scene_image_files)} new cinematic scene images.", fg=typer.colors.GREEN)
+    except ImportError as e:
+        typer.secho(f"\nCould not import CinematicGenerator. Skipping. Error: {e}", fg=typer.colors.YELLOW)
+    except Exception as e:
+        typer.secho(f"\nAn error occurred during cinematic scene generation: {e}", fg=typer.colors.RED)
+
+    typer.secho("\n--- Video Generation Finished! ---", fg=typer.colors.CYAN, bold=True)
+
 
 if __name__ == "__main__":
     app()

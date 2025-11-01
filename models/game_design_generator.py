@@ -4,7 +4,6 @@ game_design_generator.py
 Game Design Document (GDD) 생성 모듈
 - 템플릿을 기반으로 프롬프트 구성
 - LLM을 사용하여 완성된 GDD 생성
-- GDD에서 Neo4j 지식 그래프용 핵심 메타데이터 추출
 """
 
 import os
@@ -17,7 +16,7 @@ from .llm_service import LLMService
 
 class GameDesignGenerator:
     """
-    게임 디자인 문서(GDD) 생성 및 핵심 데이터 추출기
+    게임 디자인 문서(GDD) 생성
     """
 
     def __init__(

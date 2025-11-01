@@ -39,6 +39,59 @@ class KnowledgeGraphService:
             self.driver.close()
             self.logger.info("Closed Neo4j connection")
 
+    def get_character_relationships(self, character_name: str) -> List[Dict[str, Any]]:
+        """
+        Retrieves all relationships for a specific character from the graph.
+
+        Args:
+            character_name: The name of the character.
+
+        Returns:
+            A list of dictionaries, each representing a relationship.
+        """
+        if not self.driver:
+            self.logger.warning("Neo4j driver not initialized. Skipping relationship query.")
+            return []
+
+        def _get_relationships_tx(tx, name):
+            result = tx.run("""
+                MATCH (c:Character {name: $name})-[r]->(other)
+                RETURN type(r) AS relationship_type, other.name AS related_character
+            """, name=name)
+            return [{"relationship_type": record["relationship_type"], "related_character": record["related_character"]} for record in result]
+
+        try:
+            with self.driver.session() as session:
+                return session.execute_read(_get_relationships_tx, character_name)
+        except Exception as e:
+            self.logger.error(f"Failed to get relationships for character '{character_name}': {e}")
+            return []
+
+    def get_characters(self) -> List[Dict[str, Any]]:
+        """Retrieves all characters from the graph."""
+        if not self.driver:
+            return []
+        with self.driver.session() as session:
+            result = session.run("MATCH (c:Character) RETURN c.name AS name, c.description AS description")
+            return [{"name": record["name"], "description": record["description"]} for record in result]
+
+    def get_locations(self) -> List[Dict[str, Any]]:
+        """Retrieves all locations from the graph."""
+        if not self.driver:
+            return []
+        with self.driver.session() as session:
+            result = session.run("MATCH (l:Level) RETURN l.name AS name, l.description AS description")
+            return [{"name": record["name"], "description": record["description"]} for record in result]
+
+    def get_chapter_details(self, chapter_number: int) -> Dict[str, Any]:
+        """
+        (Placeholder) Retrieves details for a specific chapter.
+        Note: Chapter information is not currently modeled in the graph.
+        This method would require schema changes to be fully implemented.
+        """
+        self.logger.warning(f"get_chapter_details for chapter {chapter_number} is not implemented due to data model limitations.")
+        return {}
+
     def extract_metadata_from_gdd(self, gdd_text: str) -> Dict[str, Any]:
         """LLM을 사용하여 GDD 텍스트에서 구조화된 메타데이터를 추출합니다."""
         prompt = f"""        당신은 게임 기획 문서(GDD)를 분석하여 구조화된 데이터만 추출하는 전문 내러티브 분석가입니다.
@@ -244,7 +297,7 @@ class KnowledgeGraphService:
 
         try:
             with self.driver.session() as session:
-                session.write_transaction(_create_graph_tx, metadata)
+                session.execute_write(_create_graph_tx, metadata)
                 self.logger.info("✅ Knowledge graph transaction completed successfully.")
         except Exception as e:
             self.logger.error(f"A failure occurred during the graph creation transaction: {e}", exc_info=True)

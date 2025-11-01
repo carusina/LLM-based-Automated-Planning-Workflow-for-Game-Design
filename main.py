@@ -13,6 +13,7 @@ from models.game_design_generator import GameDesignGenerator
 from models.knowledge_graph_service import KnowledgeGraphService
 from models.llm_service import LLMService
 from models.storyline_generator import StorylineGenerator
+from models.graph_rag import GraphRAG
 from models.local_image_generator import GeminiImageGenerator
 from pathlib import Path
 
@@ -91,6 +92,14 @@ def gdd(
         json.dump(metadata, f, ensure_ascii=False, indent=2)
     typer.secho(f"Successfully extracted and saved metadata: {meta_filename}", fg=typer.colors.GREEN)
 
+    typer.echo("\n[Step 4/8] Creating knowledge graph from metadata...")
+    try:
+        kg_service.create_graph_from_metadata(metadata)
+        typer.secho("Successfully created knowledge graph.", fg=typer.colors.GREEN)
+    except Exception as e:
+        typer.secho(f"Error creating knowledge graph: {e}", fg=typer.colors.RED)
+
+
     if not generate_images:
         typer.secho("\n--- GDD Generation Finished ---", fg=typer.colors.CYAN, bold=True)
         return
@@ -98,7 +107,7 @@ def gdd(
     # --- Part 2: Image Generation Pipeline ---
     typer.secho("\n--- Starting Full Image Generation Pipeline ---", fg=typer.colors.MAGENTA, bold=True)
     
-    typer.echo(f"\n[Step 4/7] Generating a {num_chapters}-chapter storyline...")
+    typer.echo(f"\n[Step 5/8] Generating a {num_chapters}-chapter storyline...")
     storyline_generator = StorylineGenerator(llm_service)
     scenes = storyline_generator.generate(metadata, num_chapters)
     storyline_filename = output_dir / f"{base_filename}_storyline.json"
@@ -106,22 +115,22 @@ def gdd(
         json.dump(scenes, f, ensure_ascii=False, indent=2)
     typer.secho(f"Successfully generated and saved storyline: {storyline_filename}", fg=typer.colors.GREEN)
 
-    typer.echo("\n[Step 5/7] Initializing Art Director and establishing visual identity...")
+    typer.echo("\n[Step 6/8] Initializing Art Director and establishing visual identity...")
     image_generator = GeminiImageGenerator(client=client, llm_service=llm_service)
     image_generator.establish_visual_identity(gdd_text=markdown_content, metadata=metadata)
     typer.echo("Visual identity has been established.")
 
     image_output_dir = output_dir
     if not skip_concepts:
-        typer.echo("\n[Step 6/7] Generating individual concept arts...")
+        typer.echo("\n[Step 7/8] Generating individual concept arts...")
         concept_art_dir = image_output_dir / "concepts"
         concept_images = image_generator.generate_images(metadata=metadata, output_dir=str(concept_art_dir))
         if concept_images:
             typer.secho(f"Successfully generated {len(concept_images)} concept art images in {concept_art_dir}", fg=typer.colors.GREEN)
     else:
-        typer.echo("\n[Step 6/7] Skipping individual concept art generation.")
+        typer.echo("\n[Step 7/8] Skipping individual concept art generation.")
 
-    typer.echo("\n[Step 7/7] Generating cinematic scene images...")
+    typer.echo("\n[Step 8/8] Generating cinematic scene images...")
     try:
         from models.cinematic_generator import CinematicGenerator
         cinematic_gen = CinematicGenerator(llm_service, image_generator)
@@ -136,6 +145,61 @@ def gdd(
     
 
     typer.secho("\n--- Full Project Generation Pipeline Finished! ---", fg=typer.colors.CYAN, bold=True)
+
+
+@app.command()
+def update_gdd(
+    gdd_path: str = typer.Option(..., "--gdd-path", help="Path to the original GDD markdown file."),
+    update_request: str = typer.Option(..., "--update-request", help="A prompt describing the changes you want to make."),
+    output_path: str = typer.Option(..., "--output-path", help="Path to save the updated GDD file."),
+):
+    """
+    Updates an existing Game Design Document using GraphRAG to ensure consistency.
+    """
+    typer.secho("--- GDD Update Pipeline (with GraphRAG) ---", fg=typer.colors.CYAN, bold=True)
+
+    # --- Part 1: Initialization ---
+    typer.echo("\n[Step 1/4] Initializing services...")
+    try:
+        api_key = os.environ["GEMINI_API_KEY"]
+        client = genai.Client(api_key=api_key)
+    except KeyError:
+        typer.secho("Error: GEMINI_API_KEY not found in .env file.", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+    llm_service = LLMService(client=client)
+    kg_service = KnowledgeGraphService(llm_service)
+    graph_rag = GraphRAG(kg_service, llm_service)
+
+    # --- Part 2: Read Original GDD ---
+    typer.echo(f"\n[Step 2/4] Reading original GDD from: {gdd_path}")
+    try:
+        with open(gdd_path, "r", encoding="utf-8") as f:
+            original_content = f.read()
+    except FileNotFoundError:
+        typer.secho(f"Error: GDD file not found at {gdd_path}", fg=typer.colors.RED)
+        raise typer.Exit(code=1)
+
+    # --- Part 3: Update GDD with GraphRAG ---
+    typer.echo("\n[Step 3/4] Updating GDD using GraphRAG... This may take a while.")
+    updated_content = graph_rag.update_from_document(
+        original_content=original_content,
+        update_request=update_request,
+    )
+    with open(output_path, "w", encoding="utf-8") as f:
+        f.write(updated_content)
+    typer.secho(f"Successfully generated updated GDD: {output_path}", fg=typer.colors.GREEN)
+
+    # --- Part 4: Update Knowledge Graph ---
+    typer.echo("\n[Step 4/4] Updating knowledge graph from the new GDD...")
+    try:
+        graph_rag.update_graph_from_document(updated_content)
+        typer.secho("Successfully updated knowledge graph.", fg=typer.colors.GREEN)
+    except Exception as e:
+        typer.secho(f"Error updating knowledge graph: {e}", fg=typer.colors.RED)
+
+    typer.secho("\n--- GDD Update Finished! ---", fg=typer.colors.CYAN, bold=True)
+
 
 @app.command()
 def storyline():

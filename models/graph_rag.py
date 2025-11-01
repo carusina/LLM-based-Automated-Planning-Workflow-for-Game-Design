@@ -128,19 +128,35 @@ class GraphRAG:
     
     def _extract_entities(self, text: str, entity_type: str) -> List[str]:
         """
-        텍스트에서 엔티티 이름 추출
-        
-        Args:
-            text (str): 분석할 텍스트
-            entity_type (str): 엔티티 유형 ("Character", "Location", "Race")
-            
-        Returns:
-            List[str]: 추출된 엔티티 이름 목록
+        Extracts entity names from text by matching against entities in the graph.
         """
-        # 간단한 구현: 대문자로 시작하는 단어를 엔티티로 간주
-        # 실제 구현에서는 그래프에서 기존 엔티티 목록을 가져와 매칭하는 방식이 더 정확함
-        words = re.findall(r'\b[A-Z][a-zA-Z]*\b', text)
-        return list(set(words))
+        self.logger.info(f"Extracting entities of type {entity_type} from text.")
+        
+        # Get all entities of the given type from the knowledge graph
+        all_entities = []
+        if entity_type == "Character":
+            all_entities = [char.get("name") for char in self.kg.get_characters() if char.get("name")]
+        elif entity_type == "Location":
+            all_entities = [loc.get("name") for loc in self.kg.get_locations() if loc.get("name")]
+        # 'Race' is not currently stored in the graph, so this will be empty.
+        # This could be extended if Race nodes are added.
+        elif entity_type == "Race":
+            # Placeholder: self.kg.get_races() would be needed here.
+            pass
+
+        if not all_entities:
+            self.logger.warning(f"No entities of type '{entity_type}' found in the knowledge graph. Cannot extract entities from text.")
+            return []
+
+        # Find which of these entities appear in the text
+        found_entities = set()
+        for entity_name in all_entities:
+            # Use regex to find whole words to avoid partial matches
+            if re.search(r'\b' + re.escape(entity_name) + r'\b', text, re.IGNORECASE):
+                found_entities.add(entity_name)
+        
+        self.logger.info(f"Found {len(found_entities)} matching entities: {list(found_entities)}")
+        return list(found_entities)
     
     def _extract_chapters(self, text: str) -> List[str]:
         """

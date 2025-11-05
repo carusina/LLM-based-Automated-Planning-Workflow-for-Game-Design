@@ -16,6 +16,7 @@ from typing import Dict, Any, List
 
 from google import genai
 from google.genai import types
+from PIL import Image
 
 from .llm_service import LLMService
 from .local_image_generator import GeminiImageGenerator
@@ -61,23 +62,51 @@ class CinematicGenerator:
             logger.error(f"Failed to create scene narrative: {e}", exc_info=True)
             return ""
 
+    def _find_and_load_reference_images(self, scene_characters: List[str], setting: str, concepts_dir: Path) -> List[Image.Image]:
+        """Finds and loads concept art images for characters and levels using PIL."""
+        reference_images = []
+        if not concepts_dir.exists():
+            logger.warning(f"Concepts directory not found at {concepts_dir}. Cannot load reference images.")
+            return reference_images
+
+        # 1. Load character concept art
+        for char_name in scene_characters:
+            char_files = list(concepts_dir.glob(f"characters_{re.sub(r'[^\w\s-]+', '_', char_name)}*.png"))
+            if char_files:
+                image_path = char_files[0]
+                try:
+                    logger.info(f"Found reference image for character '{char_name}': {image_path.name}")
+                    img = Image.open(image_path)
+                    reference_images.append(img)
+                except Exception as e:
+                    logger.error(f"Failed to load reference image {image_path}: {e}")
+            else:
+                logger.warning(f"No concept art found for character: {char_name}")
+
+        # 2. Load level concept art
+        if setting:
+            level_files = list(concepts_dir.glob(f"levels_{re.sub(r'[^\w\s-]+', '_', setting)}*.png"))
+            if level_files:
+                image_path = level_files[0]
+                try:
+                    logger.info(f"Found reference image for level '{setting}': {image_path.name}")
+                    img = Image.open(image_path)
+                    reference_images.append(img)
+                except Exception as e:
+                    logger.error(f"Failed to load reference image {image_path}: {e}")
+            else:
+                logger.warning(f"No concept art found for level: {setting}")
+        
+        return reference_images
+
     def generate_scenes(self, storyline_data: List[Dict[str, Any]], output_dir: str) -> List[str]:
         """
-        [REFACTORED] 확립된 비주얼 아이덴티티를 기반으로 각 씬의 이미지를 생성합니다.
-
-        Args:
-            storyline_data (List[Dict[str, Any]]): 씬 정보가 담긴 리스트.
-            output_dir (str): 이미지 저장 경로.
-
-        Returns:
-            List[str]: 생성된 이미지 파일의 전체 경로 리스트.
+        [REFACTORED] 확립된 비주얼 아이덴티티와 콘셉트 아트를 참조하여 각 씬의 이미지를 생성합니다.
         """
-        logger.info("Starting cinematic scene generation using established visual identity...")
+        logger.info("Starting cinematic scene generation using established visual identity and concept art...")
         
-        # --- [REFACTORED] 총괄 아트 디렉터의 결정사항을 직접 참조 ---
         final_art_style = self.image_generator.established_art_style
         character_sheets = self.image_generator.character_sheets
-        # ---
 
         if not final_art_style:
             logger.error("Art style has not been established. Please run 'establish_visual_identity' on the image generator first.")
@@ -85,6 +114,7 @@ class CinematicGenerator:
 
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
+        concepts_dir = output_path.parent / "concepts" # Concepts are in a sibling directory
         logger.info(f"Using established art style: {final_art_style}")
 
         saved_image_paths = []
@@ -96,76 +126,63 @@ class CinematicGenerator:
 
             logger.info(f"Processing Scene ID: {scene_id}")
 
-            # '시네마틱 씬 프롬프트' 조합
-            prompt_parts = [final_art_style]
-
-            # [등장인물 묘사부] - 확립된 캐릭터 시트 사용
             scene_characters = scene.get("characters", [])
+            setting = scene.get("setting")
+
+            # --- Build Text Prompt ---
+            prompt_parts = [final_art_style]
             for char_name in scene_characters:
                 if char_name in character_sheets:
                     prompt_parts.append(f"({character_sheets[char_name]})")
                 else:
                     logger.warning(f"Character sheet for '{char_name}' not found in established identity.")
-
-            # [배경 묘사부]
-            setting = scene.get("setting")
             if setting:
                 prompt_parts.append(f"Background: {setting}")
-
-            # [연출/상황 묘사부]
             description = scene.get("description")
             if description:
                 narrative = self._create_scene_narrative(description)
                 if narrative:
                     prompt_parts.append(narrative)
-
             final_prompt = ", ".join(filter(None, prompt_parts))
-            logger.debug(f"Final prompt for scene {scene_id}: {final_prompt}")
+            logger.debug(f"Final text prompt for scene {scene_id}: {final_prompt}")
 
-            # Step 1: Generate the image object in memory
+            # --- Load Reference Images ---
+            reference_images = self._find_and_load_reference_images(scene_characters, setting, concepts_dir)
+            
+            # --- Combine prompt and images for generation ---
+            contents_for_generation = [final_prompt] + reference_images
+
+            # Step 1: Generate the base image object in memory
             try:
-                logger.info(f"Requesting image for scene {scene_id} to use as video base...")
-                # Use the new 'genai.Client' interface via the injected image_generator
+                logger.info(f"Requesting base image for scene {scene_id} with {len(reference_images)} reference images...")
                 image_generation_response = self.image_generator.client.models.generate_content(
                     model=self.image_generator.image_model_name,
-                    contents=[final_prompt],
+                    contents=contents_for_generation, # Use combined text and image prompt
                     config=types.GenerateContentConfig(
                         response_modalities=['Image'],
-                        image_config=types.ImageConfig(aspect_ratio="16:9",)
+                        image_config=types.ImageConfig(aspect_ratio="16:9")
                     )
                 )
 
-                # The response does not contain 'generated_images'.
-                # New hypothesis: Extract the 'Part' object from the response and pass it to the video generator.
+                # Extract base image for video generation
                 try:
-                    # Defensively check if the response has candidates. It might be empty due to safety filters.
                     if not image_generation_response.candidates:
-                        # Try to log the reason from prompt_feedback for better debugging.
                         if hasattr(image_generation_response, 'prompt_feedback') and image_generation_response.prompt_feedback:
                             logger.error(f"Image generation blocked for scene {scene_id}. Reason: {image_generation_response.prompt_feedback}")
                         else:
                             logger.error(f"Image generation failed for scene {scene_id}: Response has no candidates.")
-                        continue # Skip to the next scene
+                        continue
 
-                    # Extract the raw bytes and mime type from the response part.
                     image_part = image_generation_response.candidates[0].content.parts[0]
                     image_bytes = image_part.inline_data.data
                     mime_type = image_part.inline_data.mime_type
-
-                    # Create a types.Image object as suggested by the community findings.
                     base_image_object = types.Image(image_bytes=image_bytes, mime_type=mime_type)
-                    logger.info(f"Successfully created types.Image object for scene {scene_id}.")
+                    logger.info(f"Successfully created base image object for scene {scene_id}.")
                 except (IndexError, AttributeError, TypeError) as e:
                     logger.error(f"Could not extract image part from response for scene {scene_id}. Error: {e}")
-                    # Log the full text of the response if available, in case of safety blocking etc.
-                    try:
-                        logger.error(f"Full text of failed response: {image_generation_response.text}")
-                    except Exception:
-                        pass
                     continue
-                logger.info(f"Successfully generated base image for scene {scene_id}.")
-
-                # Step 2: Generate video with Veo using the image object
+                
+                # Step 2: Generate video with Veo using the base image
                 video_prompt = (
                     f"Based on this image, create a video clip in the style of a game cinematic trailer "
                     f"with the following description: '{scene.get('description', 'a dynamic cinematic scene')}'. "
@@ -178,10 +195,7 @@ class CinematicGenerator:
                     model="veo-3.1-generate-preview",
                     prompt=video_prompt,
                     image=base_image_object,
-                    config=types.GenerateVideosConfig(
-                        number_of_videos=1,
-                        resolution="720p"
-                    ),
+                    config=types.GenerateVideosConfig(number_of_videos=1, resolution="720p"),
                 )
 
                 # Step 3: Poll for video completion
@@ -197,40 +211,29 @@ class CinematicGenerator:
                 # Step 4: Download and save the video
                 generated_video = video_operation.response.generated_videos[0]
                 logger.info(f"Downloading generated video for scene {scene_id}...")
-                
-                # The download method returns the video data as bytes.
                 video_bytes = self.genai_client.files.download(file=generated_video.video)
                 
                 video_filename = f"scene_{scene_id}.mp4"
                 video_path = output_path / video_filename
                 
-                # Write the bytes to a file.
                 with open(video_path, "wb") as f:
                     f.write(video_bytes)
                 
-                saved_image_paths.append(str(video_path)) # Re-using this list for video paths
+                saved_image_paths.append(str(video_path))
                 logger.info(f"✅ Successfully saved video: {video_path}")
 
             except Exception as e:
                 logger.error(f"An error occurred during image/video generation for scene {scene_id}: {e}", exc_info=True)
 
-            # Add a delay to avoid hitting API rate limits
-            logger.info("Waiting for 10 seconds before processing the next scene...")
-            time.sleep(10)
+            logger.info("Waiting for 20 seconds before processing the next scene...")
+            time.sleep(20)
 
-        logger.info(f"Cinematic scene generation finished. Saved {len(saved_image_paths)} images.")
+        logger.info(f"Cinematic scene generation finished. Saved {len(saved_image_paths)} videos.")
         return saved_image_paths
 
     def resume_generation(self, storyline_data: List[Dict[str, Any]], output_dir: str) -> List[str]:
         """
-        Resumes the generation of cinematic images, skipping scenes that already exist.
-
-        Args:
-            storyline_data (List[Dict[str, Any]]): List of scene information.
-            output_dir (str): Directory to save the images.
-
-        Returns:
-            List[str]: A list of file paths for the newly generated images.
+        Resumes the generation of cinematic videos, skipping scenes that already exist.
         """
         logger.info("Resuming cinematic scene generation...")
         
@@ -243,6 +246,7 @@ class CinematicGenerator:
 
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
+        concepts_dir = output_path.parent / "concepts"
         logger.info(f"Using established art style: {final_art_style}")
 
         saved_image_paths = []
@@ -260,69 +264,63 @@ class CinematicGenerator:
 
             logger.info(f"Processing Scene ID: {scene_id}")
 
-            # '시네마틱 씬 프롬프트' 조합
-            prompt_parts = [final_art_style]
-
-            # [등장인물 묘사부] - 확립된 캐릭터 시트 사용
             scene_characters = scene.get("characters", [])
+            setting = scene.get("setting")
+
+            # --- Build Text Prompt ---
+            prompt_parts = [final_art_style]
             for char_name in scene_characters:
                 if char_name in character_sheets:
                     prompt_parts.append(f"({character_sheets[char_name]})")
                 else:
                     logger.warning(f"Character sheet for '{char_name}' not found in established identity.")
-
-            # [배경 묘사부]
-            setting = scene.get("setting")
             if setting:
                 prompt_parts.append(f"Background: {setting}")
-
-            # [연출/상황 묘사부]
             description = scene.get("description")
             if description:
                 narrative = self._create_scene_narrative(description)
                 if narrative:
                     prompt_parts.append(narrative)
-
             final_prompt = ", ".join(filter(None, prompt_parts))
-            logger.debug(f"Final prompt for scene {scene_id}: {final_prompt}")
+            logger.debug(f"Final text prompt for scene {scene_id}: {final_prompt}")
 
-            # Step 1: Generate the image object in memory
+            # --- Load Reference Images ---
+            reference_images = self._find_and_load_reference_images(scene_characters, setting, concepts_dir)
+            
+            # --- Combine prompt and images for generation ---
+            contents_for_generation = [final_prompt] + reference_images
+
+            # Step 1: Generate the base image object in memory
             try:
-                logger.info(f"Requesting image for scene {scene_id} to use as video base...")
-                # Use the new 'genai.Client' interface via the injected image_generator
+                logger.info(f"Requesting base image for scene {scene_id} with {len(reference_images)} reference images...")
                 image_generation_response = self.image_generator.client.models.generate_content(
                     model=self.image_generator.image_model_name,
-                    contents=[final_prompt],
+                    contents=contents_for_generation,
                     config=types.GenerateContentConfig(
                         response_modalities=['Image'],
-                        image_config=types.ImageConfig(aspect_ratio="16:9",)
+                        image_config=types.ImageConfig(aspect_ratio="16:9")
                     )
                 )
 
+                # Extract base image
                 try:
                     if not image_generation_response.candidates:
                         if hasattr(image_generation_response, 'prompt_feedback') and image_generation_response.prompt_feedback:
                             logger.error(f"Image generation blocked for scene {scene_id}. Reason: {image_generation_response.prompt_feedback}")
                         else:
                             logger.error(f"Image generation failed for scene {scene_id}: Response has no candidates.")
-                        continue # Skip to the next scene
+                        continue
 
                     image_part = image_generation_response.candidates[0].content.parts[0]
                     image_bytes = image_part.inline_data.data
                     mime_type = image_part.inline_data.mime_type
-
                     base_image_object = types.Image(image_bytes=image_bytes, mime_type=mime_type)
-                    logger.info(f"Successfully created types.Image object for scene {scene_id}.")
+                    logger.info(f"Successfully created base image object for scene {scene_id}.")
                 except (IndexError, AttributeError, TypeError) as e:
                     logger.error(f"Could not extract image part from response for scene {scene_id}. Error: {e}")
-                    try:
-                        logger.error(f"Full text of failed response: {image_generation_response.text}")
-                    except Exception:
-                        pass
                     continue
-                logger.info(f"Successfully generated base image for scene {scene_id}.")
 
-                # Step 2: Generate video with Veo using the image object
+                # Step 2: Generate video with Veo
                 video_prompt = (
                     f"Based on this image, create a video clip in the style of a game cinematic trailer "
                     f"with the following description: '{scene.get('description', 'a dynamic cinematic scene')}'. "
@@ -335,10 +333,7 @@ class CinematicGenerator:
                     model="veo-3.1-generate-preview",
                     prompt=video_prompt,
                     image=base_image_object,
-                    config=types.GenerateVideosConfig(
-                        number_of_videos=1,
-                        resolution="720p"
-                    ),
+                    config=types.GenerateVideosConfig(number_of_videos=1, resolution="720p"),
                 )
 
                 # Step 3: Poll for video completion
@@ -354,7 +349,6 @@ class CinematicGenerator:
                 # Step 4: Download and save the video
                 generated_video = video_operation.response.generated_videos[0]
                 logger.info(f"Downloading generated video for scene {scene_id}...")
-                
                 video_bytes = self.genai_client.files.download(file=generated_video.video)
                 
                 with open(video_path, "wb") as f:
@@ -366,8 +360,8 @@ class CinematicGenerator:
             except Exception as e:
                 logger.error(f"An error occurred during image/video generation for scene {scene_id}: {e}", exc_info=True)
 
-            logger.info("Waiting for 10 seconds before processing the next scene...")
-            time.sleep(10)
+            logger.info("Waiting for 20 seconds before processing the next scene...")
+            time.sleep(20)
 
-        logger.info(f"Cinematic scene generation finished. Saved {len(saved_image_paths)} new images.")
+        logger.info(f"Cinematic scene generation finished. Saved {len(saved_image_paths)} new videos.")
         return saved_image_paths
